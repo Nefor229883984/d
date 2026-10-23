@@ -462,7 +462,7 @@ def used_in_stmt(s, acc):
     elif k == "trait":
         return acc
     elif k == "import":
-        return
+        return acc
     elif k == "extern":
         return acc
     elif k == "extern":
