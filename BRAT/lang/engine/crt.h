@@ -162,6 +162,11 @@ static void *barena_alloc(size_t need) {
     BChunk *c = barena_top;
     if (!c || c->used + need > c->cap) {
         size_t cap = need > BARENA_CHUNK ? need : BARENA_CHUNK;
+        /* Grow: if we already have a chunk, double its size for the new one,
+           so a sequence of medium allocations doesn't fragment into many
+           fixed-size chunks. */
+        if (c && c->cap > 0 && cap < c->cap * 2) cap = c->cap * 2;
+        if (cap < need) cap = need;
         BChunk *nc = (BChunk *)malloc(BARENA_HDR + cap);
         if (!nc) { fputs("brat: out of memory\n", stderr); abort(); }
         nc->prev = barena_top;
