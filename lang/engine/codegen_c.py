@@ -974,16 +974,15 @@ class Emitter:
             return self.ex_closure(e)
         if k == "move":
             pre, v = self.ex(e[1])
-            if self.move_rt:
-                src = self._place_root(e)
-                if (
-                    src is not None
-                    and src in self.sym
-                    and isinstance(e[1], tuple)
-                    and e[1][0] == "var"
-                ):
-                    self.moved.add(src)
-                    v = "vmove(&%s)" % self.sym[src].cn
+            src = self._place_root(e)
+            if (
+                src is not None
+                and src in self.sym
+                and isinstance(e[1], tuple)
+                and e[1][0] == "var"
+            ):
+                self.moved.add(src)
+                v = "vmove(&%s)" % self.sym[src].cn
             return (pre, v)
         raise RuntimeError("node " + k)
 
@@ -1610,7 +1609,7 @@ class Emitter:
             if (name in self.reclaim or name in self.relet) and v.startswith("vlit("):
                 v = "vstr(" + v[5:]  # a release needs a real rc header
                 own = "owned"
-            if self.move_rt and isinstance(e, tuple) and e and e[0] == "move":
+            if isinstance(e, tuple) and e and e[0] == "move":
                 src = self._place_root(e)
                 if src is not None:
                     self.moved.add(src)

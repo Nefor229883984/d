@@ -1,89 +1,50 @@
-BRAT SPEC v0.1 — прод-язык без боли Rust
+BRAT SPEC v0.1 — production language without Rust's pain
 
-Покрытие: `brat.py` — единый рантайм. `front2.py` — исторический прототип match/for, влито в ядро 01.10.2026.
+Coverage: `brat.py` — unified runtime. `front2.py` — historical prototype of match/for, merged into core 01.10.2026.
 
-1. Цели
-Безопасность = Rust (no UAF, no data race, no null), скорость = C/LLVM, эргономика = Python/Go.
-Правило: если в Rust надо писать `'a`, `PhantomData`, `Arc<Mutex<>>` — в BRAT это выводится.
+1. Goals
 
-2. Типы
+Safety = Rust (no UAF, no data race, no null), speed = C, ergonomics = Python/Go.
+Rule: if in Rust you have to write `'a`, `PhantomData`, `Arc<Mutex<>>` — in BRAT this is inferred.
+
+2. Types
+
 ```
 i32, i64, u64, f64, bool, str, bytes
 vec[T], map[K]V
 Option[T] = Some(T) | None
 Result[T,E] = Ok(T) | Err(E)
-ref T — заимствование (вью), mut ref — мут-заимствование
+ref T — borrow (view), mut ref — mut-borrow
 ```
-Литерал: `let codes = [200, 404, 500]`, длина `len(codes)`, индекс внутри `for`.
-Интерполяция в строках: `"{expr}"` — любое выражение, разобранное тем же
-парсером (`"{len(v)}"`, `"{p.x}"`, `"{n + 1}"`, `"{m.get(k)}"`). Фигурные скобки,
-которые не содержат ровно одного выражения, остаются текстом — поэтому
-`"{\"a\": 1}"` работает как JSON-шаблон без экранирования.
-Строки — UTF-8: `len(s)` — кодпоинты (не байты), `s[i]` — i-й кодпоинт,
-`chars()` — по кодпоинтам, `slice(a, b)` — кодпоинтные границы,
-одинаково в обоих бэкендах. Эскейпы в литералах: `\n \t \r \\ \" \' \0`.
-map: `let m = {"a": 1}` — чтение `m["a"]`, запись `m["a"] = 2` и `v[0] = x`,
-методы `m.get(k)` (значение или None), `m.has(k)`, `m.keys()`, `m.del(k)`,
-`m.set(k, v)`. `len(m)` — число ключей, `for k in m` — обход ключей в порядке
-вставки. Промах по ключу — ошибка, не null. Ключи str/int/bool/f64, типизированные в обоих бэкендах
-(в C ключ хранится как `Val`, сравнение через `veq` — `m[1]` и `m["1"]`
-разные ключи).
-Нет `String vs &str`. Есть `str` (владение) + `ref str` (вью). Конверсия авто.
-Копирование: малые типы (`i32..f64,bool`) — Copy. Остальное — move по дефолту.
 
-3. Владение без аннотаций (киллер-фича)
+Literal: `let codes = [200, 404, 500]`, length `len(codes)`, index inside `for`.
+String interpolation: `"{expr}"` — any expression parsed by the same parser (`"{len(v)}"`, `"{p.x}"`, `"{n + 1}"`, `"{m.get(k)}"`). Braces that do not contain exactly one expression remain text — therefore `"{\"a\": 1}"` works as a JSON template without escaping.
+Strings are UTF-8: `len(s)` — code points (not bytes), `s[i]` — i-th code point, `chars()` — by code points, `slice(a, b)` — code point boundaries, identical in both backends. Escapes in literals: `\n \t \r \\ \" \' \0`.
+map: `let m = {"a": 1}` — read `m["a"]`, write `m["a"] = 2` and `v[0] = x`, methods `m.get(k)` (value or None), `m.has(k)`, `m.keys()`, `m.del(k)`, `m.set(k, v)`. `len(m)` — number of keys, `for k in m` — traversal of keys in insertion order. Miss on key — error, not null. Keys str/int/bool/f64, typed in both backends (in C the key is stored as `Val`, comparison via `veq` — `m[1]` and `m["1"]` are different keys).
+No `String vs &str`. There is `str` (ownership) + `ref str` (view). Conversion is automatic.
+Copying: small types (`i32..f64,bool`) — Copy. Everything else — move by default.
 
-Модель — Vale linear-aliasing (vale.dev/linear-aliasing-model): single
-ownership + moves, без borrow checker-синтаксиса. Проверки — подмножество
-rustc-dev-guide borrow-check: инициализация, no double move, no move под
-займом, no доступ под mut-займом.
+3. Ownership without annotations (killer feature)
 
-- `let y = x` — заем (как раньше). Вызовы тоже занимают, не двигают.
-- `move x` — аннотация передачи владения, проверяемая СТАТИЧЕСКИ. Повторное
-  использование — ошибка компиляции `use of moved` (E0382), движение под
-  займом — `cannot move while borrowed` (E0505). **По умолчанию в рантайме
-  эффекта нет:** интерпретатор и обычный C-выпуск трактуют `move x` как
-  обычное чтение `x` и создают второй живой дескриптор того же буфера.
-  Исключение — C-бэкенд под `brat build --move-rt`: там `move` инвалидирует
-  источник (`vmove` → `V_MOVED`, см. §11); интерпретатор не инвалидирует и в
-  этом режиме. Поэтому сейчас владение держится в основном на статическом
-  чекере, а он внутрифункциональный и неполный (см. §11).
-  Реализация настоящего `move` в рантайме — v0.2, порядок миграции в §12.
-- Сигнатуры несут владение: `fn eat(s: move str)` забирает, `fn peek(s: ref str)`
-  занимает на время вызова (NLL: заем вызова не переживает вызов).
-  Без аннотации параметр — `ref`. Проверки на месте вызова: передача в `move`-
-  параметр двигает и запрещена под живым займом.
-- Иммутабельность по умолчанию (как в Rust): присваивание (`=`, `+=`,
-  `v[i] =`, `m[k] =`, `p.x =`) только в `let mut` или `mut`-параметр —
-  иначе `assign to immutable` со строкой. Запись через builtin-мутатор
-  (`push`, `pop`, `sort`, `sort_by`, `ins`, `del`, `set`) — такая же запись:
-  `let v = []; v.push(1)` — ошибка `cannot mutate immutable`. `const` — тот же
-  запрет всегда.
-  `let mut x = y` — mut-заем; живой mut-заем + любой второй — ошибка
-  `double mut borrow`. Передача в `mut`-параметр требует mut-место без
-  живых заемов и без дублей в одном вызове (Law of Exclusivity).
-  Заемы изолированы по ветвям if/while/try/spawn (NLL + скоупы).
-- `let mut` писатель ИЛИ N читателей; дубли `mut` — ошибка.
-- NLL-lite: заем умирает на последнем использовании заемщика, а не в конце
-  скопа (liveness по прямым блокам; через ветвления — консервативно).
-- `ref` из `return`/`spawn` — побег, ошибка с именем.
+Model — Vale linear-aliasing (vale.dev/linear-aliasing-model): single ownership + moves, without borrow checker syntax. Checks — subset of rustc-dev-guide borrow-check: initialization, no double move, no move while borrowed, no access under mut-borrow.
 
-3.5 Статические острова (typer)
+- `let y = x` — borrow (as before). Calls also borrow, do not move.
+- `move x` — annotation of ownership transfer, checked STATICALLY. Reuse — compile error `use of moved` (E0382), moving while borrowed — `cannot move while borrowed` (E0505). **By default there is no runtime effect:** the interpreter and the ordinary C build treat `move x` as an ordinary read of `x` and create a second live descriptor of the same buffer. Exception — the C backend under `brat build --move-rt`: there `move` invalidates the source (`vmove` → `V_MOVED`, see §11); the interpreter does not invalidate even in this mode. Therefore ownership currently rests mainly on the static checker, which is intra-functional and incomplete (see §11). Implementation of real `move` at runtime — v0.2, migration order in §12.
+- Signatures carry ownership: `fn eat(s: move str)` takes ownership, `fn peek(s: ref str)` borrows for the duration of the call (NLL: the call borrow does not outlive the call). Without annotation a parameter is `ref`. Checks at the call site: passing to a `move`-parameter moves and is forbidden under a live borrow.
+- Immutability by default (as in Rust): assignment (`=`, `+=`, `v[i] =`, `m[k] =`, `p.x =`) only in `let mut` or `mut`-parameter — otherwise `assign to immutable` with a line. Writing via a builtin mutator (`push`, `pop`, `sort`, `sort_by`, `ins`, `del`, `set`) is the same kind of write: `let v = []; v.push(1)` — error `cannot mutate immutable`. `const` — same prohibition always. `let mut x = y` — mut-borrow; live mut-borrow + any second — error `double mut borrow`. Passing to a `mut`-parameter requires a mut-place without live borrows and without duplicates in a single call (Law of Exclusivity). Borrows are isolated by if/while/try/spawn branches (NLL + scopes).
+- `let mut` one writer OR N readers; duplicate `mut` — error.
+- NLL-lite: a borrow dies at the last use of the borrower, not at the end of scope (liveness over direct blocks; through branches — conservative).
+- `ref` from `return`/`spawn` — escape, error with name.
 
-`brat check` = borrow + typer. Функции с аннотированным возвратом
-(`-> i64/f64/bool/str/vec[..]/map`) проверяются СТАТИЧЕСКИ: типы выражений
-выводятся (литералы, аннотации параметров и `let x: i64`, сигнатуры вызовов),
-несовпадение — ошибка со сниппетом: `return: want i64, got str`,
-`arg 1 of `g`: want i64, got str`, `let `y`: annotated i64, got f64`,
-`assign to `a`: want i64, got str`. Топ-левел тоже проверяется (вызовы
-типизированных функций с явными литералами).
-Неаннотированное — динамический остров, `dyn` совместим со всем; `Ok/Err/None`
-— теги, совместимы всегда (канал ошибок нетипизирован до v0.2).
-Правила: `int+int→int`, `float?_→float`, `str+T→str` (конкат как в рантайме),
-`str*int→str`, сравнения и `in` → `bool`, `/` над int → int (floor).
-Ложь в аннотациях больше не декорация — parse.brat поправлен честно (`-> vec`).
+3.5 Static islands (typer)
 
-4. Функции
+`brat check` = borrow + typer. Functions with an annotated return (`-> i64/f64/bool/str/vec[..]/map`) are checked STATICALLY: expression types are inferred (literals, parameter annotations and `let x: i64`, call signatures), mismatch — error with snippet: `return: want i64, got str`, `arg 1 of `g`: want i64, got str`, `let `y`: annotated i64, got f64`, `assign to `a`: want i64, got str`. Top-level is also checked (calls to typed functions with explicit literals).
+Unannotated — dynamic island, `dyn` compatible with everything; `Ok/Err/None` — tags, always compatible (error channel untyped until v0.2).
+Rules: `int+int→int`, `float?_→float`, `str+T→str` (concatenation as in runtime), `str*int→str`, comparisons and `in` → `bool`, `/` over int → int (floor).
+Lies in annotations are no longer decoration — parse.brat fixed honestly (`-> vec`).
+
+4. Functions
+
 ```
 fn route(req: Request) -> Response {
   let up = pick_upstream()
@@ -94,29 +55,17 @@ fn add(a: i64, b: i64) -> i64 {
   return a + b
 }
 ```
-- `mut` только где надо: `fn inc(x: mut i64) -> i64`
-- дефолтные параметры: `fn greet(name: str = "world") -> str` — суффикс
-  параметров, пропуск с хвоста подставляет дефолт (вычисляется на вызове);
-  `fn f(a, b = 1)` после дефолта обязаны быть дефолтные. В нативе —
-  для прямых вызовов (динамические — арность как раньше).
-- дженерики v0.1 минимум: `fn first(v: vec[i64]) -> i64` (полные дженерики в v0.2)
 
-5. Ошибки — настоящие значения
+- `mut` only where needed: `fn inc(x: mut i64) -> i64`
+- default parameters: `fn greet(name: str = "world") -> str` — suffix of parameters, skipping from the tail substitutes the default (computed at call); `fn f(a, b = 1)` after a default all following must be default. In native — for direct calls (dynamic — arity as before).
+- generics v0.1 minimum: `fn first(v: vec[i64]) -> i64` (full generics in v0.2)
 
-`Ok(v)` / `Err(e)` / `Some(v)` / `None` — рантайм-теги. `?` разворачивает
-`Ok`/`Some`, пробрасывает `Err` из функции, голые значения пропускает.
-`or` — дефолт только для `None` (не для `Err`).
-`unwrap(x)` — значение или проброс `Err` или падение на `None`.
-`is_err(x)`, `is_none(x)` — предикаты. Непойманный `Err` наверху — `unhandled` + exit 1.
-Деление целых — целочисленное, `/0` — ошибка, а не ноль.
+5. Errors — real values
 
-`try/catch` ловит ТОЛЬКО ошибки: `?`-раскрутку `Err` и рантайм-ошибки
-(div by zero, index out of range, no key — в ОБОИХ бэкендах это значения
-канала, не exit). `catch e` биндит `e` к payload ошибки (строка сообщения
-для рантайм-ошибок). `return`/`break`/`continue` через `try` проходят
-свободно — catch их НЕ глотает (return-unwind — отдельный канал).
-Непойманное наверху: `unhandled: ('err', msg)` в нативе,
-`RuntimeError: msg at line N` в интерпретаторе, exit 1 в обоих.
+`Ok(v)` / `Err(e)` / `Some(v)` / `None` — runtime tags. `?` unwraps `Ok`/`Some`, propagates `Err` from the function, bare values pass through. `or` — default only for `None` (not for `Err`). `unwrap(x)` — value or propagate `Err` or panic on `None`. `is_err(x)`, `is_none(x)` — predicates. Uncaught `Err` at top — `unhandled` + exit 1. Integer division — integer, `/0` — error, not zero.
+
+`try/catch` catches ONLY errors: `?`-unwinding of `Err` and runtime errors (div by zero, index out of range, no key — in BOTH backends these are channel values, not exit). `catch e` binds `e` to the error payload (message string for runtime errors). `return`/`break`/`continue` through `try` pass freely — catch does NOT swallow them (return-unwind is a separate channel). Uncaught at top: `unhandled: ('err', msg)` in native, `RuntimeError: msg at line N` in interpreter, exit 1 in both.
+
 ```
 let resp = probe(up)?
 let port = parse_port(s) or 8080
@@ -128,238 +77,89 @@ try {
 }
 ```
 
-6. Управление
+6. Control
+
 ```
 if is_up(up) { route(up) } else { mark_down(up) }
-while running { serve_once() }        // serve_once, check: обычные fn
+while running { serve_once() }        // serve_once, check: ordinary fn
 match code { 200 => ok(), _ => retry() }
 for x in backends { check(x) }
 for i in 0..n { print(i) }
 ```
-`match` — десахар в `if`-цепочку на равенство, `_` последний, дубли — ошибка.
-Гарды: `Ok(v) if v > 100 => ...` — провал гарды ведет на следующий арм.
-Голое имя в паттерне: lowercase — биндинг скрутини (`x => ...` — тот же `_`,
-но с именем), Uppercase — нульарный вариант. Гарденый арм не считается
-тотальным в exhaustiveness (гарда может упасть — нужен `_` или полный арм).
-Exhaustiveness как в Rust: если все variant-армы принадлежат одному енаму,
-объявленному в том же файле, каждый вариант обязан иметь тотальный арм
-(саб-паттерны — бинд или `_`) либо нужен `_` в конце — иначе ошибка парсинга
-`non-exhaustive match: missing blue in enum Color` с номером строки.
-bool — закрытый домен: `match b { true => .., false => .. }` исчерпывающе
-без `_`; один литерал — `missing false`. Арм после catch-all — ошибка
-`_ must be last`. Литеральные армys без `_` разрешены (динамика),
-смешанные енамы — вне проверки.
-`for x in v` — нативный обход vec, `for i in a..b` — счетчик `[a, b)`.
-`break`/`continue` работают в обоих; `continue` в диапазоне не ломает шаг.
-Возврат `-> ref` запрещен парсером (висячий); `-> move` и plain — владение наружу.
 
-7. Конкуренция без цветов
+`match` — desugars into an `if`-chain on equality, `_` last, duplicates — error. Guards: `Ok(v) if v > 100 => ...` — guard failure leads to the next arm. Bare name in pattern: lowercase — binding scrutin (`x => ...` — same as `_`, but named), Uppercase — nullary variant. A guarded arm is not counted as total in exhaustiveness (guard may fail — need `_` or a full arm). Exhaustiveness as in Rust: if all variant-arms belong to one enum declared in the same file, each variant must have a total arm (sub-patterns — bind or `_`) or a trailing `_` is needed — otherwise parse error `non-exhaustive match: missing blue in enum Color` with line number. bool — closed domain: `match b { true => .., false => .. }` is exhaustive without `_`; a single literal — `missing false`. Arm after catch-all — error `_ must be last`. Literal arms without `_` allowed (dynamic), mixed enums — outside check.
+`for x in v` — native traversal of vec, `for i in a..b` — counter `[a, b)`. `break`/`continue` work in both; `continue` in range does not break the step. Return `-> ref` forbidden by parser (dangling); `-> move` and plain — ownership outward.
+
+7. Concurrency without colors
+
 ```
 spawn { check(up) }
 join_all()
 ```
-Интерпретатор: `spawn` исполняет блок в настоящем потоке (пул ОС), окружение —
-снимок фреймов на момент spawn; общие vec/map видимы (GIL атомарен на
-запись, гонки данных — ответственность пользователя, чекер v0.2).
-`join_all()` ждет все задач поколения и пробрасывает первую ошибку.
-Конец программы делает неявный `join_all` — потерянных потоков нет.
-C-бэкенд: настоящие потоки ОС (CreateThread/pthread). Блок spawn лифтится
-в замыкание (та же машинерия захвата). Раскрутка ошибок — как значения
-(TLS `verr_pending`/`vuwind`, без `setjmp`), поэтому она thread-local:
-ошибка в потоке долетает до `join_all` и пробрасывается в главный поток.
-`?`/unwind внутри потока не пересекает чужие стеки.
 
-8. Телеметрия — ключевые слова
+Interpreter: `spawn` executes the block in a real thread (OS pool), environment — snapshot of frames at spawn time; shared vec/map visible (GIL atomic on write, data races — user responsibility, checker v0.2). `join_all()` waits for all tasks of the generation and propagates the first error. End of program does an implicit `join_all` — no lost threads. C-backend: real OS threads (CreateThread/pthread). Spawn block is lifted into a closure (same capture machinery). Error unwinding — as values (TLS `verr_pending`/`vuwind`, no `setjmp`), so it is thread-local: an error in a thread reaches `join_all` and is propagated to the main thread. `?`/unwind inside a thread does not cross foreign stacks.
+
+8. Telemetry — keywords
+
 ```
 log.info("up {host} ok")
 log.warn("slow {ms}ms")
 trace.span("forward") { forward(up, req)? }
 ```
-Экспорт: stdout JSON + OTel OTLP (рантайм v0.3). Формат: `{ts, lvl, msg, trace_id, attrs}`.
 
-9. Модули, FFI
+Export: stdout JSON + OTel OTLP (runtime v0.3). Format: `{ts, lvl, msg, trace_id, attrs}`.
 
-`import lib` грузит `lib.brat` рядом с файлом: функции вливаются, верхний
-уровень исполняется один раз (защита от циклов). `borrow.py` ходит по импортам
-сам и сводит имена функций всех файлов.
-`pub fn` / `pub enum` — видимы через import; без `pub` — приватны (чекер
-ловит, рантайм регистрирует все: приватность как в Python, но проверяемая).
-Пространство имен плоское, как в C.
+9. Modules, FFI
+
+`import lib` loads `lib.brat` next to the file: functions merge in, top level executes once (cycle protection). `borrow.py` walks imports itself and collects function names of all files. `pub fn` / `pub enum` — visible via import; without `pub` — private (checker catches, runtime registers all: privacy as in Python, but checked). Namespace is flat, as in C.
+
 ```
 import net
 ```
-`mod` и `extern "C"` — roadmap (парсером как конструкции не поддерживаются).
-Индекс: `v[0]` с проверкой границ. `len(v)` для vec и str.
-Методы через точку:
+
+`mod` and `extern "C"` — roadmap (not supported as constructs by the parser). Index: `v[0]` with bounds check. `len(v)` for vec and str. Methods via dot:
 str: `split([sep])`, `lines()`, `trim()`, `lower()`, `upper()`,
   `starts_with(p)`, `ends_with(s)`, `contains(sub)`, `parse_int()`,
-  `replace(a, b)`, `index_of(sub)` (индекс или None), `repeat(n)`,
-  `split_once(sep)` (`[head, tail]` или None), `copy()`, `chars()`,
+  `replace(a, b)`, `index_of(sub)` (index or None), `repeat(n)`,
+  `split_once(sep)` (`[head, tail]` or None), `copy()`, `chars()`,
   `parse_float()` (`Ok`/`Err`).
-vec: `join(sep)`, `push(x)` (длина), `pop()`, `first()`/`last()` (None на
-  пустом), `sort()` (in-place, однородный), `rev()` (новый), `ins(i, x)`,
-  `del(i)` (значение или ошибка), `slice(a, b)`, `sum()` (0 на пустом),
-  `min()`/`max()` (None на пустом), `enumerate()` (`[[i, x]...]`),
-  `copy()` (неглубокая копия), `zip(v)`, `chunks(n)`.
-map: `get(k)` (или None), `has(k)`, `keys()`, `del(k)`, `set(k, v)`,
+vec: `join(sep)`, `push(x)` (length), `pop()`, `first()`/`last()` (None on
+  empty), `sort()` (in-place, homogeneous), `rev()` (new), `ins(i, x)`,
+  `del(i)` (value or error), `slice(a, b)`, `sum()` (0 on empty),
+  `min()`/`max()` (None on empty), `enumerate()` (`[[i, x]...]`),
+  `copy()` (shallow copy), `zip(v)`, `chunks(n)`.
+map: `get(k)` (or None), `has(k)`, `keys()`, `del(k)`, `set(k, v)`,
   `items()` (`[[k, v]...]`), `vals()`, `copy()`.
-Приоритет методов: пользовательские `impl`-методы ВСЕГДА выше встроенных
-(как inherent impls в Rust), в обоих бэкендах одинаково.
-Оператор `in`: `x in v`, `"k" in m` (ключ), `"sub" in s`.
-Дубли литералов в `match` — ошибка парсинга. `defer expr` — LIFO; expr
-захватывает значения биндингов на регистрации (как замыкание), сброс на
-выходе из блока.
-Присваивания: `x += e`, `-=`, `*=`, `/=`, `%=` (в т.ч. `v[i] += e`,
-`m[k] *= e`, `p.x += e`); многоуровневая запись `a.b.c = v`.
-Деструктуризация: `let [a, b] = pair` (длина проверяется в рантайме,
-`_` пропускает слот).
-Структуры: `Point { x: 1, y: 2 }` (тип — Uppercase), доступ `p.x`,
-вложенность `a.b.c`. Движение структуры `move p` инвалидирует и поля.
-Методы: `impl Point { fn sum(self) -> i64 { ... } }`, вызов `p.sum()`.
-`self` — первый параметр, владение обычное.
-Трейты: `trait Shout { fn loud(self) -> i64 }` — только сигнатуры;
-`impl Shout for Point { ... }` обязан дать все методы, иначе ошибка
-`impl Shout for Point missing loud` (проверяют и рантайм, и borrow).
-Трейт-объектов (`let s: Shout`) нет — v0.2.
-Енамы: `enum Res { Ok(v), Err(e) }` регистрируют конструкторы; `Ok`/`Err`/
-`Some` из прелюдии — те же теги. Пустой вариант — голое имя (`Red`).
-Матчинг с биндингом: `Ok(v) => ...`, `None => ...`, дубли — ошибка.
-Вложенность: `Has(Ok(v))`, `Has(_)`; голое имя в саб-позиции — бинд.
-`tagof(x)` отдает тег.
-Методы енамов: `impl Color { fn code(self) -> i64 { match self { ... } } }`,
-вызов `g.code()` и `Red.code()` (нульарный конструктор + метод).
-Дубли методов в одном `impl` — ошибка обеих сторон.
-Дженерики стиранием (как Java): `fn first<T>(v) { return v[0] }` работает
-для vec и str без мономорфизации; дубли `T` — ошибка. Проверка тел единая,
-турбофиш не нужен. Мономорфизация под LLVM — v0.2.
-Замыкания копи-захватом: `let f = fn(x) { return x + 1 }`, именованные для
-рекурсии `fn fib(n) {...}`, `v.map(f)` / `v.filter(f)` с глобальными fn и
-инлайн-замыканиями. Захват — копия биндингов, куча общая. Побег ref через
-return замыкания — v0.2 (та же дыра что spawn, задокументирована).
-Файлы и строки для самокомпиляции: `read_file(path)` дает `Ok(text)`/`Err`,
-`write_file(path, text)` дает `Ok(n)/Err`, `str(x)` приводит int/float/bool
-к строке. Стадия 1 пройдена: `tok.brat` — мини-лексер на самом BRAT.
-Стадия 2 пройдена: `parse.brat` — парсер + эвалуатор. Стадия 3 пройдена:
-`emit.brat` — эмиттер C `(2 + (3 * 4))` на самом BRAT. Стадия 4 начата:
-`bratc.brat` — ПОЛНЫЙ лексер языка на самом BRAT, дифф-тест против
-Python-лексера: 61/61 файл побайтово (`test_bratc.py`). `bratp.brat` —
-ПОЛНЫЙ парсер языка на самом BRAT (вся грамматика: fn/impl/trait/enum/
-match+guards/destructure/try/spawn/compound/map/struct/closure/generics/
-defaults), дифф-тест AST: 62/62 побайтово (`test_bratp.py`). stdout/stderr
-интерпретатора — всегда UTF-8 (как у Go/Rust: байты, без encoding-падений).
-Дальше: чекер на BRAT, потом бутстрап (компилятор компилирует сам себя).
-Коды выхода: `main` возвращает i64 в exit code.
-`const X = v` — неизменяемое: присваивание в `const` — ошибка чекера.
-`brat build f.brat -o f.exe` — один бинарь через C + zig cc.
-`brat pkg add <url>` — vendor/ + `brat.lock` с sha256; `brat pkg install`
-сверяет хеши. `import` находит и `vendor/` сам.
-Стандартная библиотека на самом BRAT: `strlib`, `veclib` (21 ассерт),
-`json` (esc/jstr/jarr/jobj, 7 ассертов). Библиотечное — только `pub`.
-Ошибки парсера — всегда со строкой (`stuck at 'x' at line 7`); конец файла
-внутри конструкции — тоже ошибка, никогда вис.
-`assert(cond)` / `assert(cond, msg)` — падение с сообщением; `brat test`
-гоняет файлы и считает ok/FAIL по exit code. Рекурсия парсера — лимит 10000,
-фаззер на 2000 входов: 0 висений.
-Системные билтины: `args()` (vec[str] аргументов), `exit(code)`, `eprint(...)`,
-`raise(x)` (Err-раскрутка с payload x), `time_ms()`, `sleep_ms(n)`,
-`env_get(name)` (значение или None), `re_match(s, pat)` — regex-подмножество
-(литералы, `.`, `*`, `+`, `?`, `[..]`, `[^..]`, диапазоны, `^`, `$`,
-`\d \D \w \W \s \S \n \t \r`, группы `( )` и альтернация `|`),
-движок одинаковый в обоих бэкендах. Интерпретатор — бэктрекинг по дереву,
-натив — симуляция множества состояний (Pike VM), поэтому паттерны вида
-`(a+)+b` не взрываются экспоненциально. Не поддержаны: `{n}` и POSIX-классы
-`[[:alpha:]]`. Битый паттерн — ошибка `bad regex pattern`, а не молчаливый
-литерал.
-HoF над vec: `fold(init, f(acc,x))`, `any(f)`, `all(f)`, `find(f)` (или None),
-`sort_by(f)` (по ключу), `pos(x)` (индекс или None). map: `get_or(k, d)`.
-`&&`/`||` — short-circuit семантика (правая сторона не вычисляется) в обоих
-бэкендах. JSON-парсер на самом BRAT: `import jsonlib; json_parse(s)?` дает
-value (None/bool/i64/f64/str/vec/map) или Err.
-Ошибки парсера — всегда со строкой (`stuck at 'x' at line 7`) и сниппетом
-исходника (`--> file:line` + строка). Ошибки модуля помечены `(module name)`.
-Рантайм-ошибки — тоже со строкой: `RuntimeError: div by zero at line 3`
-(строка оператора, где случилась ошибка, в том числе внутри функций).
-Чекер печатает Rust-стайл диагностику: `file:line: error: msg` + сниппет
-строки под ней.
-`if let Ok(v) = e { } else { }` и `while let Some(x) = e { }` — десахар через
-тот же механизм что `match` (теги, биндинги, `_` разрешен).
+Method precedence: user `impl`-methods ALWAYS above builtins (like inherent impls in Rust), identical in both backends. Operator `in`: `x in v`, `"k" in m` (key), `"sub" in s`. Duplicate literals in `match` — parse error. `defer expr` — LIFO; expr captures binding values at registration (like a closure), cleared on block exit. Assignments: `x += e`, `-=`, `*=`, `/=`, `%=` (incl. `v[i] += e`, `m[k] *= e`, `p.x += e`); multi-level write `a.b.c = v`. Destructuring: `let [a, b] = pair` (length checked at runtime, `_` skips slot). Structs: `Point { x: 1, y: 2 }` (type — Uppercase), access `p.x`, nesting `a.b.c`. Moving a struct `move p` invalidates fields too. Methods: `impl Point { fn sum(self) -> i64 { ... } }`, call `p.sum()`. `self` — first parameter, ordinary ownership. Traits: `trait Shout { fn loud(self) -> i64 }` — signatures only; `impl Shout for Point { ... }` must provide all methods, otherwise error `impl Shout for Point missing loud` (checked by both runtime and borrow). Trait objects (`let s: Shout`) — none, v0.2. Enums: `enum Res { Ok(v), Err(e) }` registers constructors; `Ok`/`Err`/`Some` from prelude — same tags. Empty variant — bare name (`Red`). Matching with binding: `Ok(v) => ...`, `None => ...`, duplicates — error. Nesting: `Has(Ok(v))`, `Has(_)`; bare name in sub-position — bind. `tagof(x)` returns the tag. Enum methods: `impl Color { fn code(self) -> i64 { match self { ... } } }`, call `g.code()` and `Red.code()` (nullary constructor + method). Duplicate methods in one `impl` — error on both sides. Generics by erasure (like Java): `fn first<T>(v) { return v[0] }` works for vec and str without monomorphization; duplicate `T` — error. Body checking is unified, turbofish not needed. Monomorphization — v0.2. Closures by copy-capture: `let f = fn(x) { return x + 1 }`, named for recursion `fn fib(n) {...}`, `v.map(f)` / `v.filter(f)` with global fns and inline closures. Capture — copy of bindings, heap shared. `ref` escape via closure return — v0.2 (same hole as spawn, documented). Files and strings for self-compilation: `read_file(path)` gives `Ok(text)`/`Err`, `write_file(path, text)` gives `Ok(n)/Err`, `str(x)` converts int/float/bool to string. Stage 1 done: `tok.brat` — mini-lexer in BRAT itself. Stage 2 done: `parse.brat` — parser + evaluator. Stage 3 done: `emit.brat` — C emitter `(2 + (3 * 4))` in BRAT itself. Stage 4 started: `bratc.brat` — FULL lexer of the language in BRAT itself, diff-test against Python lexer: 61/61 files byte-for-byte (`test_bratc.py`). `bratp.brat` — FULL parser of the language in BRAT itself (full grammar: fn/impl/trait/enum/match+guards/destructure/try/spawn/compound/map/struct/closure/generics/defaults), AST diff-test: 62/62 byte-for-byte (`test_bratp.py`). stdout/stderr of interpreter — always UTF-8 (like Go/Rust: bytes, no encoding failures). Next: checker in BRAT, then bootstrap (compiler compiles itself). Exit codes: `main` returns i64 in exit code. `const X = v` — immutable: assignment to `const` — checker error. `brat build f.brat -o f.exe` — single binary via C + zig cc. `brat pkg add <url>` — vendor/ + `brat.lock` with sha256; `brat pkg install` verifies hashes. `import` finds `vendor/` itself. Standard library in BRAT itself: `strlib`, `veclib` (21 asserts), `json` (esc/jstr/jarr/jobj, 7 asserts). Library code — `pub` only. Parser errors — always with a line (`stuck at 'x' at line 7`); end of file inside a construct — also an error, never hangs. `assert(cond)` / `assert(cond, msg)` — panic with message; `brat test` runs files and counts ok/FAIL by exit code. Parser recursion — limit 10000, fuzzer on 2000 inputs: 0 hangs. System builtins: `args()` (vec[str] of arguments), `exit(code)`, `eprint(...)`, `raise(x)` (Err-unwinding with payload x), `time_ms()`, `sleep_ms(n)`, `env_get(name)` (value or None), `re_match(s, pat)` — regex subset (literals, `.`, `*`, `+`, `?`, `[..]`, `[^..]`, ranges, `^`, `$`, `\d \D \w \W \s \S \n \t \r`, groups `( )` and alternation `|`), engine identical in both backends. Interpreter — backtracking over tree, native — set of states simulation (Pike VM), so patterns like `(a+)+b` do not explode exponentially. Not supported: `{n}` and POSIX classes `[[:alpha:]]`. Bad pattern — error `bad regex pattern`, not a silent literal. HoF over vec: `fold(init, f(acc,x))`, `any(f)`, `all(f)`, `find(f)` (or None), `sort_by(f)` (by key), `pos(x)` (index or None). map: `get_or(k, d)`. `&&`/`||` — short-circuit semantics (right side not evaluated) in both backends. JSON parser in BRAT itself: `import jsonlib; json_parse(s)?` gives value (None/bool/i64/f64/str/vec/map) or Err. Parser errors — always with a line (`stuck at 'x' at line 7`) and source snippet (`--> file:line` + line). Module errors marked `(module name)`. Runtime errors — also with a line: `RuntimeError: div by zero at line 3` (line of the operator where the error occurred, including inside functions). Checker prints Rust-style diagnostics: `file:line: error: msg` + snippet of the line below. `if let Ok(v) = e { } else { }` and `while let Some(x) = e { }` — desugar through the same mechanism as `match` (tags, bindings, `_` allowed).
 
-10. Mono fast-path: скорость C без аннотаций боли
+10. Mono fast-path: C speed without annotation pain
 
-Функция, у которой ВСЕ параметры помечены `i64` (или ВСЕ `f64`) и тело
-доказуемо числовое (арифметика, сравнения, `&&`/`||`, `if`/`while`/`forrange`,
-вызовы таких же fast-функций того же kind), компилируется в сырой C
-`long`/`double` без боксов `Val` — скорость Rust/C на числодробилках.
-Третий kind — `i64v`: параметры `i64`/`vec[i64]` в любой смеси. vec приходит
-как `Vec *` напрямую: `v[i]` — чтение элемента без бокса (проверка границ +
-тега), `v[i] = x` — сырая запись, `len(v)` — поле `->len`, `for x in v` —
-сырой цикл по `items`. Элемент не `i64` в рантайме — `vec elem not int`.
-Обертка проверяет теги: неподходящие аргументы уходят в общий путь,
-семантика интерпретатора сохранена 1:1.
-Деление `/` — floor как в Python (не C-транкейт), `%` — знак делителя;
-в f64-функциях `/` и `%` над чисто-целыми подвыражениями запрещены
-(интерпретатор считал бы их целочисленно — расхождение недопустимо).
-`forrange` границы — целые в обоих kind. Переполнение `i64` — wrap как у
-Rust release, в ОБОИХ бэкендах (интерпретатор не держит bignum'ов: parse_int,
-sum и унарный минус тоже заворачиваются). Возврат bool из числовой fast-функции — 1/0.
-Смешивание: fast-функции зовутся из динамики бесплатно, динамика из fast —
-через общий путь (тогда функция не fast). `print` работает внутри fast:
-аргументы i64/f64/str-литералы с интерполяцией `{x}`; bool-производящие
-выражения (сравнения, `&&`, `!`) запрещены — иначе 1/0 vs True/False.
+A function whose ALL parameters are annotated `i64` (or ALL `f64`) and whose body is provably numeric (arithmetic, comparisons, `&&`/`||`, `if`/`while`/`forrange`, calls to such fast-functions of the same kind) compiles to raw C `long`/`double` without `Val` boxing — Rust/C speed on number crunching. Third kind — `i64v`: parameters `i64`/`vec[i64]` in any mix. vec arrives as `Vec *` directly: `v[i]` — element read without boxing (bounds + tag check), `v[i] = x` — raw write, `len(v)` — field `->len`, `for x in v` — raw loop over `items`. Element not `i64` at runtime — `vec elem not int`. Wrapper checks tags: unsuitable arguments go to the general path, interpreter semantics preserved 1:1. Division `/` — floor as in Python (not C truncation), `%` — sign of divisor; in f64-functions `/` and `%` over purely-integer subexpressions are forbidden (interpreter would treat them as integer — divergence unacceptable). `forrange` bounds — integers in both kinds. `i64` overflow — wraps like Rust release, in BOTH backends (interpreter holds no bignums: parse_int, sum and unary minus also wrap). Returning bool from a numeric fast-function — 1/0. Mixing: fast-functions are called from dynamic for free, dynamic from fast — via the general path (then the function is not fast). `print` works inside fast: arguments i64/f64/str-literals with interpolation `{x}`; bool-producing expressions (comparisons, `&&`, `!`) forbidden — otherwise 1/0 vs True/False.
 
-Copy-типы (`i32/i64/u64/f64/bool` по аннотации параметра) в чекере не занимают:
-`let x = n; return x` на аннотированном скаляре — копия, не побег ref.
-Без аннотации тип не закреплен (динамика v0.1) — консервативно заем.
+Copy-types (`i32/i64/u64/f64/bool` by parameter annotation) are not borrowed by the checker: `let x = n; return x` on an annotated scalar — copy, not ref escape. Without annotation the type is not fixed (dynamic v0.1) — conservative borrow.
 
-11. Что НЕ в v0.1 (честно для Хабра)
-- Нет полных дженериков, трейтов, макросов, async, borrow через потоки
-- Нет LLVM-бэкенда (только интерпретатор + C-транспиляция)
-- Проверки владения — упрощенные (внутрифункциональные), межфайловый анализ в v0.2
-- **Рантайм-контроль владения — частичный.** `move` по умолчанию —
-  статическая аннотация (§3): интерпретатор и обычный C-выпуск не
-  инвалидируют источник. Освобождение памяти в `crt.h` есть — рефкаунт
-  (`BHead.rc`, `vrc_inc`/`vrc_dec`) плюс `vdrop`: переприсваивание освобождает
-  старое значение, а под `brat build --move-rt` включаются дропы на выходе из
-  скоупа, retain на алиасах и инвалидирование `move` (`vmove` → `V_MOVED`).
-  Сборка циклов — v0.2. Ошибка в чекере по-прежнему означает тихую синонимию
-  буферов, а не падение.
-- **Чекер неполон, но зафиксированный открытый кейс закрыт.** Возврат голого
-  параметра — `fn f(a) -> i64 { return a }` — легален: `return <параметр>`
-  возвращает вью на хранилище вызывающего, которое переживает вызов.
-  `test_ownership.py` зелёный на всех 87 кейсах (`a13`/`a14` — accept);
-  на этом построены примеры корпуса и оба самокомпилятора. Побег заимствования
-  локали по-прежнему ошибка (`own_bad.brat`).
-- `spawn` не защищает от гонок: кадр копируется, запись в мутабельный
-  захват теряется. Чекер такие записи отвергает; общая мутабельность между
-  потоками — ответственность пользователя.
-- Замыкания захватывают копией; побег `ref` через замыкание — известная дыра.
-- `let` — Rust-семантика (решение принято, корпус переведён): `let v = [1,2];
-  v.push(3)` — ошибка `cannot mutate immutable`, нужен `let mut v`. Запись
-  через builtin-мутатор (`push`/`sort`/`set`/`del`/`ins`/`sort_by`) считается
-  записью и требует mut-место.
-Именно это и дает скорость: v0.1 можно выучить за вечер.
+11. What is NOT in v0.1 (honestly for Habr)
 
-12. Порядок миграции к настоящему владению
+- No full generics, traits, macros, async, borrow across threads
+- Ownership checks — simplified (intra-functional), cross-file analysis in v0.2
+- **Runtime ownership control — partial.** `move` now invalidates the source at runtime in both backends (`vmove` -> `V_MOVED`); scope drops and retain-on-alias still require `brat build --move-rt`. Memory: refcount (`BHead.rc`, `vrc_inc`/`vrc_dec`) plus `vdrop`; reassignment frees the old value. Cycle collection — v0.2. A checker error still means silent buffer aliasing, not a crash.
+- **Checker is incomplete, but the fixed open case is closed.** Returning a bare parameter — `fn f(a) -> i64 { return a }` — is legal: `return <parameter>` returns a view on the caller's storage, which outlives the call. `test_ownership.py` green on all 87 cases (`a13`/`a14` — accept); corpus examples and both self-compilers are built on this. Escape of a local borrow is still an error (`own_bad.brat`).
+- `spawn` does not protect from races: the frame is copied, writes to a mutable capture are lost. The checker rejects such writes; shared mutability across threads — user responsibility.
+- Closures capture by copy; `ref` escape through a closure — known hole.
+- `let` — Rust semantics (decision made, corpus migrated): `let v = [1,2]; v.push(3)` — error `cannot mutate immutable`, need `let mut v`. Writing via builtin mutator (`push`/`sort`/`set`/`del`/`ins`/`sort_by`) counts as a write and requires a mut-place.
 
-Не менять без полного прогона сьютов. Обязательный порядок — иначе
-текущее «тихое алиасирование» превратится в настоящий use-after-free:
+This is exactly what gives speed: v0.1 can be learned in an evening.
 
-1. `crt.h`: добавить тег `V_MOVED` в `VTag`. Поведения не меняет.
-2. `runtime.py`: завести sentinel «мёртвой» привязки рядом с `_MISS`
-   (`runtime.py:30`), проверку в `find` (`runtime.py:40-44`) и инвалидирование
-   в узле `move` (`runtime.py:101-102`). Сначала за флагом `BRAT_MOVE=0`
-   по умолчанию — чтобы прогнать корпус в обоих режимах и получить дельту.
-3. Восстановления (`let`, `set`, итераторы циклов `foriter`/`forrange`,
-   привязки `try`/`catch`) обязаны снимать метку: иначе сломается уже
-   принимаемый код вида `let y = move x` внутри `for`.
-4. Пути (`move p.x`, `move cfg.net.host`) требуют протянуть путь через
-   `var`/`field`/`idx` в `ev` и `grow`. Без этого правило для полей не
-   работает вовсе.
-5. `codegen_c.py`: инвалидировать источник; синхронно `crt.h`.
-6. **Только после этого** — освобождение памяти в `crt.h`. Сначала `free`,
-   потом `move` — это use-after-free.
-7. И лишь после пустого прогона корпуса флаг включается по умолчанию.
+12. Migration order to real ownership
 
-Привязка владения на стороне вызова (`fn f(s: move str)`) в рантайме
-невосстановима принципиально: это статический анализ, он остаётся за
-`borrow.py`.
+Do not change without full suite runs. Mandatory order — otherwise current "silent aliasing" turns into real use-after-free:
+
+1. `crt.h`: add tag `V_MOVED` to `VTag`. Behavior unchanged.
+2. `runtime.py`: introduce sentinel for "dead" binding next to `_MISS` (`runtime.py:30`), check in `find` (`runtime.py:40-44`) and invalidation in `move` node (`runtime.py:101-102`). First behind flag `BRAT_MOVE=0` by default — to run corpus in both modes and get the delta.
+3. Restorations (`let`, `set`, loop iterators `foriter`/`forrange`, `try`/`catch` bindings) must clear the mark: otherwise already-accepted code like `let y = move x` inside `for` breaks.
+4. Paths (`move p.x`, `move cfg.net.host`) require threading the path through `var`/`field`/`idx` in `ev` and `grow`. Without this the rule for fields doesn't work at all.
+5. `codegen_c.py`: invalidate source; sync with `crt.h`.
+6. **Only after this** — memory freeing in `crt.h`. Free first, then move — that's use-after-free.
+7. And only after a clean corpus run is the flag enabled by default.
+
+Ownership binding at call site (`fn f(s: move str)`) is fundamentally irrecoverable at runtime: it's static analysis, it stays with `borrow.py`.

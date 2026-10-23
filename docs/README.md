@@ -16,7 +16,6 @@ Public documentation for BRAT. All files here are about the language.
 - `lang/spec/SPEC.md` — v0.1 spec, incl. §11 "not in v0.1".
 - `lang/spec/CHECKER_V2.md` — next checker design (path projections, Law of Exclusivity, Maranget usefulness).
 - `docs/project/LEDGER.md` — Rust pain points vs BRAT status.
-- `docs/project/CHANGELOG.md` — what changed.
 
 ## What these docs don't promise
 

@@ -31,7 +31,6 @@ python3 lang/tests/test_diff.py
 3. No slop. No speculative abstractions, no new files without need, no refactoring without request. Smallest diff that solves the task.
 4. Two backends must agree. Anything that works in the interpreter must work in native and vice versa.
 5. Do not change `crt.h` silently. ~130 functions on tagged union `Val`. Change both sides.
-6. Do not lie about LLVM. `codegen_llvm.py` is a 4-function proof-of-concept, not a backend.
 7. No generated files in the repo: `*.c`, `*.o`, `*.exe`, `*.zip`, `/tmp`, `/out`, `/build`.
 
 ## Architecture
@@ -48,7 +47,6 @@ python3 lang/tests/test_diff.py
 
 - `move` has no runtime effect; check is static and intra-function.
 - Channels, C-interop, `scope` not implemented (see `docs/design/ARENA.md`).
-- LLVM backend is proof-of-concept.
 - Ecosystem: `brat pkg` supports URL + sha256 + vendor only. No registry.
 
 ## Skills

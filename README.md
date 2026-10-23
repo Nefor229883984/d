@@ -21,7 +21,6 @@ tests compare their output and exit codes byte-for-byte.
 
 - `move` doesn't invalidate at runtime; check is static and intra-function.
 - Channels, C-interop, `scope` not implemented (see `docs/design/ARENA.md`).
-- LLVM backend is proof-of-concept; tests skip without `llvmlite`.
 
 ## Quick start
 

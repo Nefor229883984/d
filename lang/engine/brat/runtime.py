@@ -32,7 +32,7 @@ class LoopCont(Exception):
     pass
 _MISS = object()
 _MOVED = object()  # sentinel: reading a moved binding errors under BRAT_MOVE=1
-_MOVE = bool(os.environ.get('BRAT_MOVE'))
+_MOVE = os.environ.get('BRAT_MOVE', '1') not in ('0', 'false', 'False', '')
 
 _INTERP_RE = re.compile(r'\{([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)\}')
 

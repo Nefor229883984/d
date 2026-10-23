@@ -141,7 +141,7 @@ Runs on every exit path, including errors.
 
 ## 10. What's not in v0.1
 
-See `lang/spec/SPEC.md` §11. Channels, C-interop, `scope`, LLVM backend
+See `lang/spec/SPEC.md` §11. Channels, C-interop, `scope`
 (proof-of-concept) are not implemented.
 
 ## Running examples

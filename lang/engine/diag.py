@@ -18,40 +18,37 @@ class Diagnostic:
 
 _EXPLAIN = {
     "E0382": ("use of moved value",
-              "Значение уже перемещено (`move`); после этого использовать "
-              "исходное место нельзя. Перемещение линейное: одно владение.",
-              "Используйте переменную, в которую переместили значение, или "
-              "скопируйте его заранее (только для Copy-типов)."),
+              "Value was moved (`move`); the source location can no longer be used. "
+              "Move is linear: one ownership.",
+              "Use the variable the value was moved into, or copy it beforehand "
+              "(Copy types only)."),
     "E0505": ("cannot move while borrowed",
-              "Место занято живым заёмом; перемещать его нельзя пока заём "
-              "не закончился.",
-              "Дождитесь последнего использования заёмщика, потом перемещайте."),
+              "Location is held by a live borrow; cannot move until the borrow ends.",
+              "Wait for the last use of the borrower, then move."),
     "E0499": ("double mut borrow",
-              "Одному месту нельзя иметь два изменяемых заёма одновременно "
+              "One location cannot have two mutable borrows at once "
               "(law of exclusivity).",
-              "Оставьте одного писателя; пишите через владельца, а не через "
-              "alias-копию."),
+              "Keep one writer; write through the owner, not an alias copy."),
     "E0515": ("ref escapes via return",
-              "Заём локального хранилища улетает из функции через `return`; "
-              "хранилище умрёт с кадром.",
-              "Возвращайте копию/значение, а не заём; заём параметра можно — "
-              "его хранилище принадлежит вызывающему."),
+              "A borrow of local storage escapes the function via `return`; "
+              "the storage dies with the frame.",
+              "Return a copy/value, not a borrow; borrowing a parameter is fine — "
+              "its storage belongs to the caller."),
     "E0596": ("assign to immutable",
-              "Присваивание в неизменяемую связку или через неизменяемый "
-              "приёмник.",
-              "Объявите `let mut ...` (или параметр `mut ...`), чтобы писать."),
+              "Assignment to an immutable binding or through an immutable receiver.",
+              "Declare `let mut ...` (or a `mut ...` parameter) to write."),
     "B0521": ("ref escapes via spawn",
-              "Заём захвачен в `spawn`; кадр копируется, заём висит на "
-              "мёртвом хранилище — гонка данных.",
-              "Передавайте в `spawn` только Copy-значения или явно `move`;"
-              " общий не-Copy биндинг не захватывайте."),
+              "A borrow captured by `spawn`; the frame is copied, the borrow "
+              "hangs on dead storage — data race.",
+              "Pass only Copy values or explicitly `move` into `spawn`; "
+              "do not capture a shared non-Copy binding."),
     "B0101": ("use of undeclared var",
-              "Имя не объявлено в этой области (нет `let`, параметра, "
+              "Name not declared in this scope (no `let`, parameter, "
               "`for`/`match` binding).",
-              "Добавьте `let <имя> = ...` или импортируйте имя из другого файла."),
-    "B0000": ("прочая ошибка",
-              "Неклассифицированная диагностика.",
-              "См. текст сообщения выше."),
+              "Add `let <name> = ...` or import the name from another file."),
+    "B0000": ("other error",
+              "Unclassified diagnostic.",
+              "See the message text above."),
 }
 
 
@@ -79,9 +76,9 @@ def classify(message):
 
 
 def explain(code):
-    return _EXPLAIN.get(code, ("прочая ошибка",
-                               "См. текст диагностики выше.",
-                               "Исправьте согласно сообщению."))
+    return _EXPLAIN.get(code, ("other error",
+                               "See the diagnostic text above.",
+                               "Fix per the message."))
 
 
 def _source_line(lines, ln):

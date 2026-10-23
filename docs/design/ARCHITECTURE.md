@@ -48,7 +48,6 @@ Rust wins on: ecosystem, soundness, tooling, community, CPU-bound throughput.
 
 ## 4. What's not worth doing
 
-- **LLVM backend** — proof-of-concept only. C backend is the production path.
 - **Replacing Python in runtime** — already done (C backend).
 - **Formal soundness proof** — out of scope for v0.1.
 

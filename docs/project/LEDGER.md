@@ -57,7 +57,6 @@ Sources: rustc-dev-guide borrow-check (5 properties), Vale linear-aliasing, Matt
 
 ## Speed
 
-- **No LLVM backend.** `codegen_llvm.py` builds IR for 4 test functions only. Old "x6268" number was wrong. Removed.
 - **Native C backend** (`codegen_c.py` + `crt.h`): 58/58 programs byte-identical to interpreter. Zero `#error` paths.
 - **test_diff.py**: ~50 small programs, interpreter vs native, stdout + exit code. Caught i64 truncation, map key typing, `index_of` by bytes, `lines` split, `join` non-strings, container sort, parse_int/sum overflow, Unicode case.
 - **Mono fast-path**: `i64`-annotated pure-integer functions compile to raw C `long` (floor-div like Python, wrap on overflow like Rust). No benchmarks yet — see `bench/README.md`.
@@ -66,7 +65,6 @@ Sources: rustc-dev-guide borrow-check (5 properties), Vale linear-aliasing, Matt
 
 - `move` doesn't invalidate the value at runtime; check is static and intra-function only.
 - Channels, C-interop, `scope` not implemented (see `docs/design/ARENA.md`).
-- LLVM backend is proof-of-concept.
 - Ecosystem: `brat pkg` does URL + sha256 + vendor only. No registry.
 - Tag values (Ok/Err/enum) refcount: interned names, args freed on rc=0 (no recursion into elements — by design to avoid UAF on aliases).
 - `brat run` now gates arena programs (ownership checker runs first).

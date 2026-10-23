@@ -765,8 +765,8 @@ def do_build(args):
         static = True
     if static and not spec.static:
         sys.stderr.write(
-            "brat build: %s не поддерживает статическую линковку (-static); "
-            "соберите динамический бинарник: brat build %s --dynamic\n"
+            "brat build: %s does not support static linking (-static); "
+            "build a dynamic binary: brat build %s --dynamic\n"
             % (spec.exe, src))
         try:
             os.unlink(cfile)
@@ -858,8 +858,8 @@ def do_dist(args):
         static = True
     if static and not spec.static:
         sys.stderr.write(
-            "brat dist: %s не поддерживает -static; соберите динамические "
-            "артефакты: brat dist ... --dynamic\n" % spec.exe)
+            "brat dist: %s does not support -static; build dynamic "
+            "artifacts: brat dist ... --dynamic\n" % spec.exe)
         return 1
     targets = [t.strip() for t in target.split(",")] if target else [None]
     targets = [t for t in targets if t != ""]

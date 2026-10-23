@@ -55,6 +55,15 @@ struct Vec { Val *items; long len, cap; };
 struct Map { Val *keys; Val *vals; long len, cap; const char *type;
              long *idx; long idx_cap; long idx_used; };
 struct Val { VTag tag; union { bint b; bint ival; double fval; char *str; Vec *vec; Map *map; struct { char *tag; Vec *args; } tv; } as; };
+#if !defined(_WIN32)
+static pthread_mutex_t _brat_ctr_lock = PTHREAD_MUTEX_INITIALIZER;
+#define BRAT_CTR_LOCK() pthread_mutex_lock(&_brat_ctr_lock)
+#define BRAT_CTR_UNLOCK() pthread_mutex_unlock(&_brat_ctr_lock)
+#else
+#define BRAT_CTR_LOCK() ((void)0)
+#define BRAT_CTR_UNLOCK() ((void)0)
+#endif
+
 typedef struct BHead { long rc; } BHead;
 BFN void vraise(const char *msg);
 BFN void vraisef(const char *fmt, const char *arg);
@@ -436,6 +445,7 @@ BFN Val vstruct(Map *m) { Val r; r.tag = V_STRUCT; r.as.map = m; return r; }
 
 
 BFN void vec_push(Vec *v, Val x) {
+    BRAT_CTR_LOCK();
     if (v->len >= v->cap) {
         long oldcap = v->cap;
         v->cap *= 2;
@@ -443,6 +453,7 @@ BFN void vec_push(Vec *v, Val x) {
                                     sizeof(Val) * (size_t)oldcap, sizeof(Val) * (size_t)v->cap);
     }
     v->items[v->len++] = x;
+    BRAT_CTR_UNLOCK();
 }
 /* A tag's arguments outlive the block that built them when the tag is returned
  * (Ok/Err from an arena), so an arena-built argument list is moved to the heap.
@@ -490,9 +501,10 @@ BFN void vec_push_all(Vec *dst, Vec *src) {
     for (long i = 0; i < src->len; i++) vec_push(dst, src->items[i]);
 }
 BFN void map_set_v(Map *m, Val k, Val v) {
-    if (k.tag == V_VEC || k.tag == V_STRUCT) { vraise("bad map key"); return; }
+    BRAT_CTR_LOCK();
+    if (k.tag == V_VEC || k.tag == V_STRUCT) { vraise("bad map key"); BRAT_CTR_UNLOCK(); return; }
     long at = map_find(m, k);
-    if (at >= 0) { m->vals[at] = v; return; }
+    if (at >= 0) { m->vals[at] = v; BRAT_CTR_UNLOCK(); return; }
     if (m->len >= m->cap) {
         long oldcap = m->cap;
         int inm = BIS_ARENA((BHead *)m - 1);
@@ -502,6 +514,7 @@ BFN void map_set_v(Map *m, Val k, Val v) {
     }
     m->keys[m->len] = k; m->vals[m->len] = v; m->len++;
     map_idx_put(m, m->len - 1);
+    BRAT_CTR_UNLOCK();
 }
 
 BFN void map_set(Map *m, const char *k, Val v) {
@@ -517,13 +530,15 @@ BFN Val *map_get(Map *m, const char *k) {
     return map_get_v(m, key);
 }
 BFN long map_del_v(Map *m, Val k) {
+    BRAT_CTR_LOCK();
     long at = map_find(m, k);
-    if (at < 0) return 0;
+    if (at < 0) { BRAT_CTR_UNLOCK(); return 0; }
     memmove(m->keys + at, m->keys + at + 1, sizeof(Val) * (size_t)(m->len - at - 1));
     memmove(m->vals + at, m->vals + at + 1, sizeof(Val) * (size_t)(m->len - at - 1));
     m->len--;
     
     map_idx_rebuild(m);
+    BRAT_CTR_UNLOCK();
     return 1;
 }
 
