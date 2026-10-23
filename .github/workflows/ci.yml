@@ -14,13 +14,11 @@ jobs:
         run: sudo apt-get install -y gcc clang
       - name: Run tests
         run: |
-          cd BRAT
           python3 lang/tests/test_lang.py
           python3 lang/tests/test_native.py
           python3 lang/tests/test_diff.py
       - name: Sanitizer check
         run: |
-          cd BRAT
           # Build one example under ASan+UBSan to catch memory errors
           python3 lang/engine/cli.py emit-c lang/examples/hello.brat > /tmp/hello.c
           clang -fsanitize=address,undefined -O1 -g -I lang/engine /tmp/hello.c -o /tmp/hello -lm
