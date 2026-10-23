@@ -180,7 +180,7 @@ def print_usage():
     sys.stderr.write("       brat test file.brat [more...]\n")
     sys.stderr.write("       brat build file.brat [-o out.exe] [--target TRIPLET] [--static|--dynamic] [--move-rt] [--mem N]\n")
     sys.stderr.write("       brat dist  file.brat [-o out]   [--target TRIPLET] [--static|--dynamic]\n")
-    sys.stderr.write("       brat pkg add <url> | brat pkg install\n")
+    sys.stderr.write("       brat pkg add <url> | install | list | remove <file>\n")
     sys.stderr.write("       brat new NAME [--kind service|tool]\n")
 
 
@@ -495,6 +495,29 @@ def do_pkg(args):
                 f.write(text)
             sys.stdout.write("ok %s\n" % it["file"])
         return code
+    if sub == "list":
+        items = read_lock()
+        if not items:
+            sys.stdout.write("empty lock\n")
+            return 0
+        for it in items:
+            sys.stdout.write("%s  %s  %s\n" % (it.get("file"), it.get("sha256", "")[:12], it.get("url")))
+        return 0
+    if sub == "remove" and len(args) == 2:
+        name = args[1]
+        items = read_lock()
+        new = [it for it in items if it.get("file") != name]
+        if len(new) == len(items):
+            sys.stderr.write("brat pkg: not in lock: %s\n" % name)
+            return 1
+        write_lock(new)
+        vendor = os.path.join(os.getcwd(), "vendor", name)
+        try:
+            os.remove(vendor)
+        except OSError:
+            pass
+        sys.stdout.write("removed %s\n" % name)
+        return 0
     print_usage()
     return 2
 
