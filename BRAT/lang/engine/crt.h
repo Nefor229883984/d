@@ -95,6 +95,7 @@ BFN Val vint(bint n) { Val v; v.tag = V_INT; v.as.ival = n; return v; }
 BFN Val vfloat(double n) { Val v; v.tag = V_FLOAT; v.as.fval = n; return v; }
 
 static void *balloc(size_t n);
+static BTLS int barena_depth;
 /* Intern table for immortal string literals: avoids one allocation per loop. */
 static struct { const char *src; char *ptr; } _vlit_cache[512];
 static int _vlit_n = 0;
@@ -106,7 +107,10 @@ BFN Val vlit(const char *s) {
         }
     }
     size_t n = strlen(s);
+    int saved = barena_depth;
+    barena_depth = 0;
     char *p = (char *)balloc(n + 1);
+    barena_depth = saved;
     memcpy(p, s, n + 1);
     ((BHead *)p - 1)->rc = -1; /* immortal: never freed, never counted */
     if (_vlit_n < 512) {

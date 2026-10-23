@@ -1,0 +1,50 @@
+enum Res {
+  Ok(total),
+  Err(reason)
+}
+
+fn handle(req: str) -> Res {
+  arena {
+    let parts = req.split(",")
+    let mut total = 0
+    for p in parts {
+      if p == "" {
+        return Err(own("empty field among {len(parts)} fields"))
+      }
+      total = total + len(p)
+    }
+    return Ok(total)
+  }
+  return Err("unreachable")
+}
+
+fn main() -> i64 {
+  let mut base = "ab"
+  let mut f = 0
+  while f < 150 {
+    base = base + ",cd"
+    f = f + 1
+  }
+  let mut ok = 0
+  let mut failed = 0
+  let mut last = ""
+  let mut i = 0
+  while i < 3000 {
+    let mut suffix = ""
+    if i % 5 == 0 {
+      suffix = ",,"
+    }
+    let line = base + suffix
+    match handle(line) {
+      Ok(t) => { ok = ok + 1 },
+      Err(r) => {
+        failed = failed + 1
+        last = r
+      }
+    }
+    i = i + 1
+  }
+  print("ok {ok} failed {failed}")
+  print("last: {last}")
+  return 0
+}
