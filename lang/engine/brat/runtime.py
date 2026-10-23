@@ -1,6 +1,7 @@
 import contextlib
 import copy
 import ctypes
+_STR_PTRS = []
 import json
 import os
 import re
@@ -1518,6 +1519,25 @@ def call(name, args, env, funcs):
         if vals[0] == 0:
             raise RuntimeError('null pointer dereference')
         return ctypes.cast(vals[0], ctypes.c_char_p).value.decode('utf-8')
+    if name == 'ptr_of_str':
+        if len(vals) != 1:
+            raise TypeError('ptr_of_str wants 1 arg')
+        _ct = __import__('ctypes')
+        b = vals[0].encode('utf-8') if isinstance(vals[0], str) else vals[0]
+        buf = _ct.create_string_buffer(b)
+        _STR_PTRS.append(buf)
+        return _ct.cast(buf, _ct.c_void_p).value or 0
+    if name == 'ptr_write_str':
+        if len(vals) != 2:
+            raise TypeError('ptr_write_str wants 2 args')
+        if vals[0] == 0:
+            raise RuntimeError('null pointer dereference')
+        _ct = __import__('ctypes')
+        b = vals[1].encode('utf-8') if isinstance(vals[1], str) else vals[1]
+        buf = _ct.create_string_buffer(b)
+        _STR_PTRS.append(buf)
+        _ct.cast(vals[0], _ct.POINTER(_ct.c_void_p)).contents.value = _ct.cast(buf, _ct.c_void_p).value
+        return 0
     if name == 'ptr_write_ptr':
         if len(vals) != 2:
             raise TypeError('ptr_write_ptr wants 2 args')

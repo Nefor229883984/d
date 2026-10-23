@@ -1343,6 +1343,15 @@ class Emitter:
             pa, a = self.ex(args[0])
             pb, b = self.ex(args[1])
             return (pa + pb, "((%s).as.ival == 0 ? (vraise(\"null pointer dereference\"), vunwind) : ((*(void **)(%s).as.ival = (void *)(%s).as.ival), vint(0)))" % (a, a, b))
+        if name == "ptr_of_str":
+            self.need_arity(args, 1, name)
+            pa, a = self.ex(args[0])
+            return (pa, "vint((long long)(%s).as.str)" % a)
+        if name == "ptr_write_str":
+            self.need_arity(args, 2, name)
+            pa, a = self.ex(args[0])
+            pb, b = self.ex(args[1])
+            return (pa + pb, "((%s).as.ival == 0 ? (vraise(\"null pointer dereference\"), vunwind) : ((*(const char **)(%s).as.ival = (const char *)(%s).as.str), vint(0)))" % (a, a, b))
         if name == "errno":
             self.need_arity(args, 0, name)
             return ([], "vint(errno)")

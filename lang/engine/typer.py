@@ -158,6 +158,7 @@ BRES = {
     "ptr_read_f64": "float", "ptr_write_f64": "int",
     "ptr_read_ptr": "int", "ptr_offset": "int",
     "ptr_read_str": "str", "ptr_write_ptr": "int",
+    "ptr_of_str": "int", "ptr_write_str": "int",
     "errno": "int", "strerror": "str",
 }
 
