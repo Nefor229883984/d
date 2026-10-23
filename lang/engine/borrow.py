@@ -36,6 +36,7 @@ BUILTINS = {
     "args", "exit", "eprint", "raise", "time_ms", "sleep_ms", "env_get",
     "ptr_null", "ptr_is_null", "ptr_offset", "ptr_read_i64", "ptr_write_i64",
     "ptr_read_f64", "ptr_write_f64", "ptr_read_ptr", "ptr_read_str",
+    "ptr_write_ptr", "errno", "strerror",
     "__arena_enter", "__arena_leave", "own",
     "re_match",
     "tcp_listen", "tcp_connect", "tcp_accept",

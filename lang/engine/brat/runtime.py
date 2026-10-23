@@ -1,5 +1,6 @@
 import contextlib
 import copy
+import ctypes
 import json
 import os
 import re
@@ -937,7 +938,7 @@ def call_value(name, vals, env, funcs):
         # Reuse call's extern branch via a tiny AST is not possible; handle minimal:
         import ctypes
         libname = info[3]
-        lib = ctypes.CDLL(libname) if libname else ctypes.CDLL(None)
+        lib = ctypes.CDLL(libname, use_errno=True) if libname else ctypes.CDLL(None, use_errno=True)
         fn = getattr(lib, name)
         params, ret = info[1], info[2]
         varargs = info[4] if len(info) > 4 else None
@@ -1039,7 +1040,7 @@ def call(name, args, env, funcs):
     if isinstance(info, tuple) and info and info[0] == 'extern':
         import ctypes
         libname = info[3]
-        lib = ctypes.CDLL(libname) if libname else ctypes.CDLL(None)
+        lib = ctypes.CDLL(libname, use_errno=True) if libname else ctypes.CDLL(None, use_errno=True)
         fn = getattr(lib, name)
         params, ret = info[1], info[2]
         varargs = info[4] if len(info) > 4 else None
@@ -1525,6 +1526,12 @@ def call(name, args, env, funcs):
             raise RuntimeError('null pointer dereference')
         ctypes.cast(vals[0], ctypes.POINTER(ctypes.c_void_p)).contents.value = vals[1]
         return 0
+    if name == 'errno':
+        return __import__('ctypes').get_errno()
+    if name == 'strerror':
+        if len(vals) != 1:
+            raise TypeError('strerror wants 1 arg')
+        return os.strerror(int(vals[0]))
     if name == 'env_get':
         if len(vals) != 1:
             raise TypeError('env_get wants 1 arg')
