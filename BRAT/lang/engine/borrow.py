@@ -327,10 +327,10 @@ def check_expr(e, decl, errs, funcs, inpath=False):
         if e[1] not in decl and e[1] not in funcs:
             errs.note("use of undeclared var `%s`" % e[1], rel=undeclared_rel(e[1], e))
         elif e[1] in decl and decl[e[1]].get("moved"):
-            errs.note("use of moved `%s`" % e[1],
+            errs.note("use of moved `%s` (hint: the value was moved; use a copy or re-bind)" % e[1],
                       rel=(decl[e[1]].get("moved_line"), "`%s` moved here" % e[1]))
         elif e[1] in decl and decl[e[1]].get("frozen_by"):
-            errs.note("cannot use `%s` while mutably borrowed by `%s`" % (e[1], decl[e[1]]["frozen_by"][0]),
+            errs.note("cannot use `%s` while mutably borrowed by `%s` (hint: end the borrow first)" % (e[1], decl[e[1]]["frozen_by"][0]),
                       rel=(decl[e[1]]["frozen_by"][1], "mut borrow here"))
     elif k in ("num", "str", "bool", "none", "rstr"):
         return
