@@ -977,6 +977,8 @@ def call_value(name, vals, env, funcs):
             fn.restype = ctypes.c_char_p
         elif ret == 'ptr':
             fn.restype = ctypes.c_void_p
+        elif ret == 'f64':
+            fn.restype = ctypes.c_double
         elif ret in _STRUCTS:
             fn.restype = _struct_class(ret)
         else:
@@ -1001,6 +1003,8 @@ def call_value(name, vals, env, funcs):
             if hasattr(r, 'value'):
                 return r.value or 0
             return r if r is not None else 0
+        if ret == 'f64':
+            return r
         return None
     if name in funcs:
         params, body = funcs[name]
@@ -1099,6 +1103,8 @@ def call(name, args, env, funcs):
             fn.restype = ctypes.c_char_p
         elif ret == 'ptr':
             fn.restype = ctypes.c_void_p
+        elif ret == 'f64':
+            fn.restype = ctypes.c_double
         elif ret in _STRUCTS:
             fn.restype = _struct_class(ret)
         else:
@@ -1123,6 +1129,8 @@ def call(name, args, env, funcs):
             if hasattr(r, 'value'):
                 return r.value or 0
             return r if r is not None else 0
+        if ret == 'f64':
+            return r
         return None
     if name == 'print':
         _out_line(' '.join(_bstr(v) for v in vals))

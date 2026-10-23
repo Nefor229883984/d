@@ -1398,6 +1398,8 @@ class Emitter:
                 return (pa_all, "vstr(%s)" % call)
             if ret == "ptr":
                 return (pa_all, "vint((long long)(%s))" % call)
+            if ret == "f64":
+                return (pa_all, "vfloat(%s)" % call)
             if ret in self.structs:
                 _fields = self.structs[ret]
                 _sets = []
@@ -2644,6 +2646,8 @@ class Emitter:
                 _cret = "int"
             elif _ret == "str":
                 _cret = "const char *"
+            elif _ret == "f64":
+                _cret = "double"
             elif _ret == "ptr":
                 _cret = "void *"
             else:
@@ -2658,6 +2662,8 @@ class Emitter:
                     _cparams.append("int")
                 elif _a == "str":
                     _cparams.append("const char *")
+                elif _a == "f64":
+                    _cparams.append("double")
                 elif _a == "ptr":
                     _cparams.append("void *")
                 else:
