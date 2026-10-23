@@ -1389,18 +1389,7 @@ class Emitter:
                 elif ann == "f64":
                     cargs.append("(%s).as.fval" % sa)
                 elif ann in self.structs:
-                    _mems = []
-                    for _f, _ft in self.structs[ann]:
-                        _base = "(*map_get((%s).as.map, \"%s\"))" % (sa, _f)
-                        if _ft == "str":
-                            _mems.append(".%s = %s.as.str" % (_f, _base))
-                        elif _ft == "ptr":
-                            _mems.append(".%s = (void *)%s.as.ival" % (_f, _base))
-                        elif _ft == "f64":
-                            _mems.append(".%s = %s.as.fval" % (_f, _base))
-                        else:
-                            _mems.append(".%s = %s.as.ival" % (_f, _base))
-                    cargs.append("(%s){ %s }" % (ann, ", ".join(_mems)))
+                    cargs.append(self._val_to_c_struct(ann, sa))
                 else:
                     cargs.append("(%s).as.ival" % sa)
             call = "%s(%s)" % (name, ", ".join(cargs))
@@ -1413,21 +1402,7 @@ class Emitter:
             if ret == "f64":
                 return (pa_all, "vfloat(%s)" % call)
             if ret in self.structs:
-                _fields = self.structs[ret]
-                _sets = []
-                for _f, _ft in _fields:
-                    if _ft == "str":
-                        _val = "vstr(_r.%s)" % _f
-                    elif _ft == "ptr":
-                        _val = "vint((long long)_r.%s)" % _f
-                    elif _ft == "f64":
-                        _val = "vfloat(_r.%s)" % _f
-                    else:
-                        _val = "vint(_r.%s)" % _f
-                    _sets.append("map_set(_v.as.map, \"%s\", %s);" % (_f, _val))
-                _expr = "({ %s _r = %s; Val _v = vstruct(vmap(\"%s\")); %s; _v; })" % (
-                    ret, call, ret, " ".join(_sets))
-                return (pa_all, _expr)
+                return (pa_all, self._c_struct_to_val(ret, call))
             return (pa_all + ["%s;" % call], "vnil()")
         if name in self.sym:
             return self.ex_vcall(name, args)
@@ -2635,6 +2610,8 @@ class Emitter:
                     _smembers.append("const char *%s;" % _sf)
                 elif _sty == "ptr":
                     _smembers.append("void *%s;" % _sf)
+                elif _sty in self.structs:
+                    _smembers.append("%s %s;" % (_sty, _sf))
                 else:
                     _smembers.append("long long %s;" % _sf)
             self.out.append("typedef struct { %s } %s;" % (" ".join(_smembers), _sname))
@@ -2708,18 +2685,7 @@ class Emitter:
                 elif _ann == "ptr":
                     _pushes.append("vec_push(_a, vint((long long)%s));" % _arg)
                 elif isinstance(_ann, str) and _ann in self.structs:
-                    _sfields = self.structs[_ann]
-                    _sets = []
-                    for _sf, _st in _sfields:
-                        if _st == "str":
-                            _sets.append("map_set(_v.as.map, \"%s\", vstr(%s.%s));" % (_sf, _arg, _sf))
-                        elif _st == "ptr":
-                            _sets.append("map_set(_v.as.map, \"%s\", vint((long long)%s.%s));" % (_sf, _arg, _sf))
-                        elif _st == "f64":
-                            _sets.append("map_set(_v.as.map, \"%s\", vfloat(%s.%s));" % (_sf, _arg, _sf))
-                        else:
-                            _sets.append("map_set(_v.as.map, \"%s\", vint(%s.%s));" % (_sf, _arg, _sf))
-                    _pushes.append("({ Val _v = vstruct(vmap(\"%s\")); %s vec_push(_a, _v); });" % (_ann, " ".join(_sets)))
+                    _pushes.append("vec_push(_a, %s);" % self._c_struct_to_val(_ann, _arg))
             _cname = self.cfn("fn:" + _cb_name)
             self.out.append("%s brat_cb_%s(%s) {" % (_cret, _cb_name, ", ".join(_cparams)))
             self.out.append("  Vec *_a = vvec();")
@@ -2735,18 +2701,7 @@ class Emitter:
             elif _cb_ret == "f64":
                 self.out.append("  return _r.as.fval;")
             elif _cb_ret in self.structs:
-                _sfields = self.structs[_cb_ret]
-                self.out.append("  %s _res = {0};" % _cb_ret)
-                for _sf, _st in _sfields:
-                    if _st == "str":
-                        self.out.append("  _res.%s = (*map_get(_r.as.map, \"%s\")).as.str;" % (_sf, _sf))
-                    elif _st == "ptr":
-                        self.out.append("  _res.%s = (void *)(*map_get(_r.as.map, \"%s\")).as.ival;" % (_sf, _sf))
-                    elif _st == "f64":
-                        self.out.append("  _res.%s = (*map_get(_r.as.map, \"%s\")).as.fval;" % (_sf, _sf))
-                    else:
-                        self.out.append("  _res.%s = (*map_get(_r.as.map, \"%s\")).as.ival;" % (_sf, _sf))
-                self.out.append("  return _res;")
+                self.out.append("  return %s;" % self._val_to_c_struct(_cb_ret, "_r"))
             else:
                 self.out.append("  return _r.as.ival;")
             self.out.append("}")
@@ -2786,18 +2741,7 @@ class Emitter:
                     _pushes.append("vec_push(_a, vint((long long)%s));" % _arg)
                 elif isinstance(_ann, str) and _ann in self.structs:
                     _cparams.append("%s %s" % (_ann, _arg))
-                    _sfields = self.structs[_ann]
-                    _sets = []
-                    for _sf, _st in _sfields:
-                        if _st == "str":
-                            _sets.append("map_set(_v.as.map, \"%s\", vstr(%s.%s));" % (_sf, _arg, _sf))
-                        elif _st == "ptr":
-                            _sets.append("map_set(_v.as.map, \"%s\", vint((long long)%s.%s));" % (_sf, _arg, _sf))
-                        elif _st == "f64":
-                            _sets.append("map_set(_v.as.map, \"%s\", vfloat(%s.%s));" % (_sf, _arg, _sf))
-                        else:
-                            _sets.append("map_set(_v.as.map, \"%s\", vint(%s.%s));" % (_sf, _arg, _sf))
-                    _pushes.append("({ Val _v = vstruct(vmap(\"%s\")); %s vec_push(_a, _v); });" % (_ann, " ".join(_sets)))
+                    _pushes.append("vec_push(_a, %s);" % self._c_struct_to_val(_ann, _arg))
                 else:
                     _ok = False
                     break
@@ -2833,22 +2777,43 @@ class Emitter:
             elif _ex_ret == "f64":
                 self.out.append("  return _r.as.fval;")
             elif _ex_ret in self.structs:
-                _sfields = self.structs[_ex_ret]
-                self.out.append("  %s _res = {0};" % _ex_ret)
-                for _sf, _st in _sfields:
-                    if _st == "str":
-                        self.out.append("  _res.%s = (*map_get(_r.as.map, \"%s\")).as.str;" % (_sf, _sf))
-                    elif _st == "ptr":
-                        self.out.append("  _res.%s = (void *)(*map_get(_r.as.map, \"%s\")).as.ival;" % (_sf, _sf))
-                    elif _st == "f64":
-                        self.out.append("  _res.%s = (*map_get(_r.as.map, \"%s\")).as.fval;" % (_sf, _sf))
-                    else:
-                        self.out.append("  _res.%s = (*map_get(_r.as.map, \"%s\")).as.ival;" % (_sf, _sf))
-                self.out.append("  return _res;")
+                self.out.append("  return %s;" % self._val_to_c_struct(_ex_ret, "_r"))
             else:
                 self.out.append("  return _r.as.ival;")
             self.out.append("}")
         return "\n".join(self.out) + "\n"
+
+    def _val_to_c_struct(self, sname, valexpr):
+        _mems = []
+        for _f, _ft in self.structs[sname]:
+            _base = "(*map_get((%s).as.map, \"%s\"))" % (valexpr, _f)
+            if _ft == "str":
+                _mems.append(".%s = %s.as.str" % (_f, _base))
+            elif _ft == "ptr":
+                _mems.append(".%s = (void *)%s.as.ival" % (_f, _base))
+            elif _ft == "f64":
+                _mems.append(".%s = %s.as.fval" % (_f, _base))
+            elif _ft in self.structs:
+                _mems.append(".%s = %s" % (_f, self._val_to_c_struct(_ft, _base)))
+            else:
+                _mems.append(".%s = %s.as.ival" % (_f, _base))
+        return "(%s){ %s }" % (sname, ", ".join(_mems))
+
+    def _c_struct_to_val(self, sname, cexpr):
+        _sets = []
+        for _f, _ft in self.structs[sname]:
+            if _ft == "str":
+                _val = "vstr(%s.%s)" % (cexpr, _f)
+            elif _ft == "ptr":
+                _val = "vint((long long)%s.%s)" % (cexpr, _f)
+            elif _ft == "f64":
+                _val = "vfloat(%s.%s)" % (cexpr, _f)
+            elif _ft in self.structs:
+                _val = self._c_struct_to_val(_ft, "%s.%s" % (cexpr, _f))
+            else:
+                _val = "vint(%s.%s)" % (cexpr, _f)
+            _sets.append("map_set(_v.as.map, \"%s\", %s);" % (_f, _val))
+        return "({ %s _r = %s; Val _v = vstruct(vmap(\"%s\")); %s; _v; })" % (sname, cexpr, sname, " ".join(_sets))
 
     def emit_forward_decls(self):
         self.out.append("static Val vcall_any(Val fn, Vec *a);")
