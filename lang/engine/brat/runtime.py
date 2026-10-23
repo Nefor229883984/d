@@ -930,6 +930,105 @@ def do_method(obj, meth, vals):
     raise NameError('no method ' + meth + ' for ' + type(obj).__name__)
 
 
+def call_value(name, vals, env, funcs):
+    info = funcs.get(name)
+    if isinstance(info, tuple) and info and info[0] == 'extern':
+        # delegate to call with no eval by wrapping values as literals? use extern path directly
+        # Reuse call's extern branch via a tiny AST is not possible; handle minimal:
+        import ctypes
+        libname = info[3]
+        lib = ctypes.CDLL(libname) if libname else ctypes.CDLL(None)
+        fn = getattr(lib, name)
+        params, ret = info[1], info[2]
+        varargs = info[4] if len(info) > 4 else None
+
+        def to_c(ty, v):
+            if isinstance(ty, str) and ty.startswith('fn'):
+                return _callback_ptr(ty, v, funcs)
+            if ty in _STRUCTS:
+                cls = _struct_class(ty)
+                inst = cls()
+                for f, ft in _STRUCTS[ty]:
+                    fv = v.get(f) if isinstance(v, dict) else v
+                    setattr(inst, f, to_c(ft, fv))
+                return inst
+            if ty == 'i64':
+                return ctypes.c_longlong(v)
+            if ty == 'i32':
+                return ctypes.c_int(v)
+            if ty == 'f64':
+                return ctypes.c_double(v)
+            if ty == 'str':
+                return ctypes.c_char_p(v.encode('utf-8') if isinstance(v, str) else v)
+            if ty == 'ptr':
+                return ctypes.c_void_p(v)
+            return v
+
+        cargs = []
+        for p, v in zip(params, vals):
+            ann = p[2] if isinstance(p, tuple) and len(p) > 2 else None
+            cargs.append(to_c(ann, v))
+        for v in vals[len(params):]:
+            cargs.append(to_c(varargs, v))
+        fn.argtypes = None
+        if ret in ('i64', 'i32'):
+            fn.restype = ctypes.c_longlong
+        elif ret == 'str':
+            fn.restype = ctypes.c_char_p
+        elif ret == 'ptr':
+            fn.restype = ctypes.c_void_p
+        elif ret in _STRUCTS:
+            fn.restype = _struct_class(ret)
+        else:
+            fn.restype = None
+        r = fn(*cargs)
+        if ret in _STRUCTS:
+            out = {'$type': ret}
+            for f, ft in _STRUCTS[ret]:
+                val = getattr(r, f)
+                if ft == 'str':
+                    out[f] = val.decode('utf-8') if isinstance(val, bytes) else val
+                elif ft == 'ptr':
+                    out[f] = val.value if hasattr(val, 'value') else (val or 0)
+                else:
+                    out[f] = val
+            return out
+        if ret in ('i64', 'i32'):
+            return r
+        if ret == 'str':
+            return r.decode('utf-8') if isinstance(r, bytes) else r
+        if ret == 'ptr':
+            if hasattr(r, 'value'):
+                return r.value or 0
+            return r if r is not None else 0
+        return None
+    if name in funcs:
+        params, body = funcs[name]
+        vals = fill_defaults(params, vals, env, funcs, name)
+        names = [p[0] for p in params]
+        frame = {}
+        for nm, val in zip(names, vals):
+            if _MANAGED:
+                vrc_inc(val)
+            frame[nm] = val
+        with _frame():
+            env.append(frame)
+            try:
+                run_block(body, env, funcs, frame=True)
+            except (Done, Ret) as r:
+                _drop_all(frame)
+                env.pop()
+                return r.v
+            except Exception:
+                _drop_all(frame)
+                env.pop()
+                raise
+            _drop_all(frame)
+            env.pop()
+            return None
+    raise NameError(name)
+
+
 def call(name, args, env, funcs):
     vals = [ev(a, env, funcs) for a in args]
     info = funcs.get(name)
@@ -942,6 +1041,8 @@ def call(name, args, env, funcs):
         varargs = info[4] if len(info) > 4 else None
         # build ctypes argtypes
         def to_c(ty, v):
+            if isinstance(ty, str) and ty.startswith('fn'):
+                return _callback_ptr(ty, v, funcs)
             if ty in _STRUCTS:
                 cls = _struct_class(ty)
                 inst = cls()
@@ -1599,6 +1700,7 @@ _TRAITS = {}
 _VARIANTS = {}
 _STRUCTS = {}
 _STRUCT_CACHE = {}
+_CALLBACK_REFS = []
 
 
 def _struct_ctype(ty):
@@ -1628,6 +1730,90 @@ def _struct_class(name):
     })
     _STRUCT_CACHE[name] = cls
     return cls
+
+
+def _parse_cb_sig(sig):
+    s = sig.strip()
+    i = s.index('(')
+    j = s.index(')')
+    params_str = s[i + 1:j].strip()
+    rest = s[j + 1:].strip()
+    if rest.startswith('->'):
+        ret = rest[2:].strip()
+    else:
+        ret = 'none'
+    if params_str == '':
+        params = []
+    else:
+        params = [p.strip() for p in params_str.split(',')]
+    return params, ret
+
+
+def _cb_ctype(ty):
+    import ctypes
+    if ty == 'i64':
+        return ctypes.c_longlong
+    if ty == 'i32':
+        return ctypes.c_int
+    if ty == 'f64':
+        return ctypes.c_double
+    if ty == 'str':
+        return ctypes.c_char_p
+    if ty == 'ptr':
+        return ctypes.c_void_p
+    if ty in _STRUCTS:
+        return _struct_class(ty)
+    return ctypes.c_longlong
+
+
+def _callback_ptr(sig, fname, funcs):
+    import ctypes
+    ptypes, ret = _parse_cb_sig(sig)
+    argtypes = [_cb_ctype(t) for t in ptypes]
+    if ret in ('i64', 'i32'):
+        restype = ctypes.c_longlong
+    elif ret == 'f64':
+        restype = ctypes.c_double
+    elif ret == 'str':
+        restype = ctypes.c_char_p
+    elif ret == 'ptr':
+        restype = ctypes.c_void_p
+    else:
+        restype = None
+
+    def _c_to_brat(ty, cv):
+        if ty == 'str':
+            return cv.decode('utf-8') if isinstance(cv, bytes) else cv
+        if ty == 'ptr':
+            return cv.value if hasattr(cv, 'value') else (cv or 0)
+        return cv
+
+    def wrapper(*cvals):
+        brat_args = []
+        for t, cv in zip(ptypes, cvals):
+            v = _c_to_brat(t, cv)
+            if t == 'str':
+                brat_args.append(('str', v))
+            elif t == 'f64':
+                brat_args.append(('num', v))
+            else:
+                brat_args.append(('num', v))
+        r = call(fname, brat_args, [{}], funcs)
+        if ret in ('i64', 'i32', 'ptr'):
+            return int(r) if not isinstance(r, bool) else int(r)
+        if ret == 'f64':
+            return float(r)
+        if ret == 'str':
+            return r.encode('utf-8') if isinstance(r, str) else r
+        return None
+
+    if argtypes:
+        CFUNCTYPE = ctypes.CFUNCTYPE(restype, *argtypes)
+    else:
+        CFUNCTYPE = ctypes.CFUNCTYPE(restype)
+    ptr = CFUNCTYPE(wrapper)
+    _CALLBACK_REFS.append(ptr)
+    return ptr
 
 
 def hoist(s, funcs):

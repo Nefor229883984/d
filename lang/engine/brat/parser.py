@@ -324,9 +324,9 @@ def parse_params(c, allow_varargs=False):
             depth = 0
             while not (c.peek().v in (',', ')') and depth == 0):
                 x = c.peek()
-                if x.v == '[':
+                if x.v in ('[', '('):
                     depth += 1
-                if x.v == ']':
+                if x.v in (']', ')'):
                     depth -= 1
                 toks.append(x.v)
                 c.step()
@@ -349,9 +349,9 @@ def parse_params(c, allow_varargs=False):
                 x = c.peek()
                 if x.v in (',', ')', '=') and depth == 0:
                     break
-                if x.v == '[':
+                if x.v in ('[', '('):
                     depth += 1
-                if x.v == ']':
+                if x.v in (']', ')'):
                     depth -= 1
                 if first is None and depth == 0 and x.k in ('ID', 'KW'):
                     first = x.v
@@ -784,9 +784,9 @@ def parse_sig(c):
                 x = c.peek()
                 if x.v in (',', ')') and depth == 0:
                     break
-                if x.v == '[':
+                if x.v in ('[', '('):
                     depth += 1
-                if x.v == ']':
+                if x.v in (']', ')'):
                     depth -= 1
                 if first is None and depth == 0 and x.k in ('ID', 'KW'):
                     first = x.v

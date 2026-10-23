@@ -33,6 +33,8 @@ def report(f, errs, src):
 
 
 def ann_type(ann):
+    if isinstance(ann, str) and ann.startswith("fn"):
+        return "ptr"
     if ann in ("i32", "i64", "u64"):
         return "int"
     if ann == "f64":

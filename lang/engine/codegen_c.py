@@ -305,6 +305,7 @@ class Emitter:
         self.externs = {}
         self.structs = {}
         self.exported = set()
+        self.fn_ret = {}
         self.codes = {}
         self.user_meths = set()
         self.clos = []
@@ -857,6 +858,7 @@ class Emitter:
         if k == "exportfn":
             if s[1] not in self.fns:
                 self.fns[s[1]] = (s[2], s[3])
+                self.fn_ret[s[1]] = s[5]
                 self.order.append(("fn", s[1]))
             self.collect_nested(s[3])
             self.exported.add(s[1])
@@ -872,6 +874,7 @@ class Emitter:
         if k == "fn":
             if s[1] not in self.fns:
                 self.fns[s[1]] = (s[2], s[3])
+                self.fn_ret[s[1]] = s[5]
                 self.order.append(("fn", s[1]))
             self.collect_nested(s[3])
         elif k == "impl":
@@ -1358,12 +1361,15 @@ class Emitter:
             pa_all = []
             cargs = []
             for i, a in enumerate(args):
-                pa, sa = self.ex(a)
-                pa_all.extend(pa)
                 if i < len(params):
                     ann = params[i][2] if isinstance(params[i], tuple) and len(params[i]) > 2 else None
                 else:
                     ann = varargs
+                if isinstance(ann, str) and ann.startswith("fn") and isinstance(a, tuple) and a[0] == "str":
+                    cargs.append("brat_cb_%s" % a[1])
+                    continue
+                pa, sa = self.ex(a)
+                pa_all.extend(pa)
                 if ann == "str":
                     cargs.append("(%s).as.str" % sa)
                 elif ann == "ptr":
@@ -2542,6 +2548,48 @@ class Emitter:
         """
         self.out = []
         self.run_pipeline()
+        self._cb_wrappers = []
+        for _cb_name in sorted(self.fns):
+            _info = self.fns[_cb_name]
+            if not (isinstance(_info, tuple) and len(_info) == 2):
+                continue
+            if not _cb_name.isidentifier():
+                continue
+            _cb_params, _cb_body = _info
+            _cb_ret = self.fn_ret.get(_cb_name)
+            _ok = True
+            _cparams = []
+            for _i, _p in enumerate(_cb_params):
+                _ann = _p[2] if isinstance(_p, tuple) and len(_p) > 2 else None
+                _arg = "a%d" % _i
+                if _ann in ("i64", "i32"):
+                    _cparams.append(("long long" if _ann == "i64" else "int") + " " + _arg)
+                elif _ann == "f64":
+                    _cparams.append("double " + _arg)
+                elif _ann == "str":
+                    _cparams.append("const char * " + _arg)
+                elif _ann == "ptr":
+                    _cparams.append("void * " + _arg)
+                else:
+                    _ok = False
+                    break
+            if not _ok:
+                continue
+            if _cb_ret in (None, "none"):
+                _cret = "void"
+            elif _cb_ret in self.structs:
+                _cret = _cb_ret
+            elif _cb_ret in ("i64", "i32"):
+                _cret = "long long" if _cb_ret == "i64" else "int"
+            elif _cb_ret == "f64":
+                _cret = "double"
+            elif _cb_ret == "str":
+                _cret = "const char *"
+            elif _cb_ret == "ptr":
+                _cret = "void *"
+            else:
+                continue
+            self._cb_wrappers.append((_cb_name, _cret, _cparams))
         self.out = []
         self.nested_seq = 0
         self.clos_done = 0
@@ -2578,7 +2626,7 @@ class Emitter:
             _varargs = _[0] if _ else None
             if not _lib:
                 continue
-            if "libc" in _lib:
+            if "libc.so" in _lib or _lib == "libc":
                 continue
             _ptypes = []
             for _p in _params:
@@ -2616,9 +2664,46 @@ class Emitter:
                 _cparams.append("...")
             self.out.append("extern %s %s(%s);" % (_cret, _name, ", ".join(_cparams) if _cparams else "void"))
         self.out.append("")
+        for _cb_name, _cret, _cparams in self._cb_wrappers:
+            self.out.append("%s brat_cb_%s(%s);" % (_cret, _cb_name, ", ".join(_cparams)))
+        self.out.append("")
         self.run_pipeline()
         self.reclaim, self.relet = _reclaim_names(
             [s for k, s in self.top_exe if k == "stmt"], set())
+        # C-callable wrappers for BRAT functions used as callbacks.
+        for _cb_name, _cret, _cparams in self._cb_wrappers:
+            _cb_params, _cb_body = self.fns[_cb_name]
+            _cb_ret = self.fn_ret.get(_cb_name)
+            _pushes = []
+            for _i, _p in enumerate(_cb_params):
+                _ann = _p[2] if isinstance(_p, tuple) and len(_p) > 2 else None
+                _arg = "a%d" % _i
+                if _ann == "i64" or _ann == "i32":
+                    _pushes.append("vec_push(_a, vint(%s));" % _arg)
+                elif _ann == "f64":
+                    _pushes.append("vec_push(_a, vfloat(%s));" % _arg)
+                elif _ann == "str":
+                    _pushes.append("vec_push(_a, vstr(%s));" % _arg)
+                elif _ann == "ptr":
+                    _pushes.append("vec_push(_a, vint((long long)%s));" % _arg)
+            _cname = self.cfn("fn:" + _cb_name)
+            self.out.append("%s brat_cb_%s(%s) {" % (_cret, _cb_name, ", ".join(_cparams)))
+            self.out.append("  Vec *_a = vvec();")
+            for _push in _pushes:
+                self.out.append("  " + _push)
+            self.out.append("  Val _r = %s(NULL, _a);" % _cname)
+            if _cb_ret in (None, "none"):
+                self.out.append("  (void)_r;")
+            elif _cb_ret == "str":
+                self.out.append("  return _r.as.str;")
+            elif _cb_ret == "ptr":
+                self.out.append("  return (void *)_r.as.ival;")
+            elif _cb_ret == "f64":
+                self.out.append("  return _r.as.fval;")
+            else:
+                self.out.append("  return _r.as.ival;")
+            self.out.append("}")
+            self.out.append("")
         self.emit_main_open()
         for kind, payload in self.top_exe:
             if kind == "import":

@@ -130,6 +130,24 @@ def main():
         n += 1
         print("ffi ok: custom_struct")
 
+        src = (
+            'extern "/tmp/opencode/libtest/libcb.so" fn apply_cb(x: i64, cb: fn(i64) -> i64) -> i64;\n'
+            'extern "/tmp/opencode/libtest/libcb.so" fn sum_cb(a: i64, b: i64, cb: fn(i64, i64) -> i64) -> i64;\n\n'
+            'fn double_it(x: i64) -> i64 { return x * 2; }\n'
+            'fn add_ab(a: i64, b: i64) -> i64 { return a + b; }\n\n'
+            'fn main() -> i64 {\n'
+            '    if apply_cb(21, "double_it") != 42 { return 1; }\n'
+            '    if sum_cb(10, 20, "add_ab") != 30 { return 2; }\n'
+            '    return 0;\n'
+            '}\n'
+        )
+        ri, oi = run_interp(src)
+        rn, on = run_native(src, "custom_callback")
+        assert ri == rn == 0, "callback exit: interp=%d native=%d" % (ri, rn)
+        assert oi == on
+        n += 1
+        print("ffi ok: custom_callback")
+
     print("FFI ALL GREEN (%d cases)" % n)
 
 
