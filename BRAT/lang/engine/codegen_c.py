@@ -1861,7 +1861,6 @@ class Emitter:
                     self.emit_drop(name, ind)
             return
         b = self.new_tmp("dfb")
-        # volatile kept for ABI stability with older generated defer frames.
         self.out.append(ind + "volatile long %s = vdfsp;" % b)
         self.out.append(ind + "vdfpush();")
         self.dfb.append(b)
