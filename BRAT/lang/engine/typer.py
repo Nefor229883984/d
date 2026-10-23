@@ -265,7 +265,9 @@ class FnTyper:
 
     def arena_note(self, msg, ownable=True):
         if ownable:
-            msg += "; if it must leave, hand out a heap copy: `own(...)`"
+            msg += "  (hint: hand out a heap copy with `own(...)`, e.g. `return Err(own(msg))`)"
+        else:
+            msg += "  (hint: keep the value inside the block, or copy it with `own(...)` first)"
         self.errs.note("arena: " + msg)
 
     def _closure_body(self, e):
