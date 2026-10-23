@@ -1,35 +1,48 @@
-Как участвовать в BRAT
+# Contributing to BRAT
 
-Спасибо, что смотрите. Правил два, и они жёсткие.
+Thanks for showing up. BRAT is small, honest, and fast-moving — the bar is
+low, but it is real. If you can run a command and read its output, you can
+contribute.
 
-Правило первое: правка = тест
+## The two rules
 
-Ни одна правка не принимается без прогона. Проверка честная — тест,
-который печатает `PASS` и при этом падает, считается сломанным тестом,
-а не успехом. (Так уже ловились: `test_diff.py` печатал `diffs: 39` и
-выходил с кодом 0.)
+1. **A change ships with a run.** No edit is accepted without executing the
+   test suite and pasting the real output. A test that prints `PASS` and
+   exits 0 while failing is a broken test, not a success — we've caught those.
+2. **Honesty over percentages.** `docs/project/LEDGER.md` and
+   `docs/project/CHANGELOG.md` are not marketing. If a feature is half-done,
+   it says so. Benchmarks that can't be reproduced are deleted, not carried
+   forward.
 
-Правило второе: честность выше процентов
+## How to get a PR merged
 
-docs/project/LEDGER.md и docs/project/CHANGELOG.md — не витрина. Если фича работает наполовину,
-это написано в LEDGER как наполовину. Проценты производительности,
-которые нельзя воспроизвести, удаляются, а не переносятся в следующий
-релиз. Прежняя запись «x6268» по LLVM была удалена именно поэтому.
+1. Branch off `main`. One topic per PR.
+2. Run the battery:
+   ```sh
+   python3 lang/tests/test_lang.py
+   python3 lang/tests/test_ownership.py
+   ```
+   Native path touched? Also:
+   ```sh
+   python3 lang/tests/test_native.py
+   python3 lang/tests/test_diff.py      # needs `python -m ziglang`
+   ```
+3. Update `docs/project/CHANGELOG.md`: what changed and how it was verified.
+   Not "improved" — the actual result and the actual run.
+4. Paste the real command output in the PR. Not a summary of it.
 
-Что нужно, чтобы правку приняли
+## What we don't want
 
-1. Ветка от `main`, одно изменение — одна тема.
-2. Прогон батареи: `python lang/tests/test_lang.py`, `test_ownership.py`,
-   `python lang/tests/test_lang.py`.
-3. Если правка трогает нативный путь — `test_native.py` и `test_diff.py`
-   (нужен `python -m ziglang`).
-4. В docs/project/CHANGELOG.md — что изменилось и чем это проверено. Не «улучшено»,
-   а конкретный результат и конкретный прогон.
-5. Отчёт о проверке — фактический вывод команды, а не пересказ.
+- Optimizations without a number. "Before" first, then "after."
+- Features that can't be exercised by a test.
+- README claims the code doesn't back. When docs and code disagree, fix the
+  docs — silently is not an option.
 
-Чего проект не хочет
+## Where to start
 
-- Оптимизаций без замера. Сначала цифра «до», потом «после».
-- Новых фич, которые нельзя проверить тестом.
-- Утверждений в README, которых нет в коде. Если код и документация
-  расходятся — правят документацию, а не молчат.
+- `docs/guide/index.md` — what BRAT is, in 60 seconds.
+- `docs/guide/ownership.md` — the ownership model and its known holes.
+- `docs/project/LEDGER.md` — what's done, what isn't, what's honest.
+- `AGENTS.md` — the red lines. Read before touching `crt.h` or `SPEC.md`.
+
+Questions? Open an issue or just start a PR. We answer fast.

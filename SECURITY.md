@@ -1,43 +1,44 @@
-Безопасность
+# Security
 
-BRAT — компилятор и рантайм. К его дырам относятся не только ошибки
-в рантайме, но и код, который он генерирует.
+BRAT is a compiler and a runtime. Its attack surface is both: the code it
+runs *and* the C code it generates.
 
-Что считается уязвимостью
+## In scope
 
-- **Выполнение произвольного кода.** Эмиттер C вставляет имена из
-  программы в исходный текст C без экранирования. Это значит, что
-  `.brat`-файл может выполнить произвольный код при сборке — даже если
-  `brat check` не нашёл ни одной ошибки. Сюда попадает всё: неэкранированные
-  ключи полей структурных литералов, имена методов и типов.
-- **Обход проверки владения.** Любой способ заставить чекер замолчать —
-  уязвимость, а не особенность. Гарантия владения должна быть безусловной.
-- **Гонки данных и повреждение памяти в C-рантайме** (`crt.h`),
-  включая выходы за границы и use-after-free.
-- **Песочница рантайма.** `read_file`, `write_file`, `env_get` должны
-  ограничиваться каталогом программы.
-- **Отказ в обслуживании.** Неограниченное выделение памяти, катастрофический
-  бэктрекинг, экспоненциальный разбор входных данных.
+- **Arbitrary code execution via generated C.** The C emitter splices program
+  names into source text without escaping. A `.brat` file can execute
+  arbitrary code at build time — even when `brat check` reports zero errors.
+  This includes unescaped struct field keys, method names, and type names.
+- **Ownership-checker bypass.** Any way to silence the checker is a
+  vulnerability, not a feature. Ownership guarantees must be unconditional.
+- **Memory safety in the C runtime** (`crt.h`): out-of-bounds, use-after-free,
+  data races.
+- **Runtime sandbox.** `read_file`, `write_file`, and `env_get` must stay
+  within the program's directory.
+- **Denial of service.** Unbounded allocation, catastrophic backtracking,
+  exponential parsing of untrusted input.
 
-Что уязвимостью НЕ является
+## Out of scope
 
-- Ошибки языка, задокументированные в docs/project/LEDGER.md и SPEC.md.
-- Код, уже защищённый границей (например, `brat pkg` вне каталога
-  программы).
-- Поведение, для которого у атакующего уже есть права root или shell.
+- Language errors documented in `docs/project/LEDGER.md` and `SPEC.md`.
+- Code already guarded by a boundary (e.g. `brat pkg` outside the program dir).
+- Anything requiring root or an existing shell on the target.
 
-Как сообщать
+## Reporting
 
-Пришлите описание и **минимальный `.brat`-файл**, который это
-воспроизводит. Полезнее всего payload, который сам себя доказывает:
-пишет маркерный файл во временный каталог и завершается, без обращений
-в сеть и без разрушений.
+Send a description plus a **minimal `.brat` file** that reproduces it. The
+most useful payload proves itself: writes a marker file to a temp directory
+and exits, with no network access and no destruction.
 
-Проверять буду так же, как проверял сам: воспроизведение, а не описание.
-Если не воспроизвелось — так и скажу.
+I verify by reproduction, not by reading. If I can't reproduce it, I'll say so
+plainly.
 
-Что уже найдено и не исправлено
+## Known, unfixed
 
-Честный список лежит в аудиторских отчётах и в `docs/project/LEDGER.md`. Найденные
-критические находки считаются открытыми до появления фикса и теста,
-который ловит обход.
+The honest list lives in the audit reports and in `docs/project/LEDGER.md`.
+Critical findings stay open until a fix ships *and* a test catches the bypass.
+
+## Contact
+
+Open a private issue or reach out directly. I respond fast, and I don't
+shoot the messenger.
