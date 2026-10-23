@@ -53,6 +53,23 @@ Rust wins on: ecosystem, soundness, tooling, community, CPU-bound throughput.
 
 ## 5. Roadmap
 
-- v0.1: C backend, arenas, ownership-lite, region analysis, CLI, minimal FFI (`extern`).
-- v0.2: `mod`, LSP, self-hosting.
-- v1.0: ecosystem, registry, debugger, formal soundness.
+Future goals only; completed items are tracked in `docs/project/LEDGER.md`.
+
+v0.2:
+- modules (`mod`) and namespaces
+- LSP: diagnostics, completion, go-to-definition
+- channels and `scope`
+- self-hosting: checker in BRAT
+- generics monomorphization and trait objects
+- exhaustive match checking
+
+v0.3:
+- package registry, transitive deps, versioning
+- debugger and profiler integration
+- richer FFI (stable ABI, cross-boundary callbacks)
+
+v1.0:
+- formal soundness story and verification
+- production hardening and ecosystem
+
+Non-goals: async/await colors, lifetime annotations, integer zoo.
