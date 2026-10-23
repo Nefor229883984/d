@@ -47,9 +47,17 @@
 - **Security**: 24% команд теряют время из-за security/privacy issues.
 - **Ключевой тренд**: AI-ассистированная разработка, безопасность, понятные ошибки.
 
-## 6. Источники
+## 6. AI и типизированные языки (2026)
+
+- **GitHub Octoverse 2025**: AI делает типизированные языки более популярными — TypeScript стал #1.
+- **AI feedback loop**: типы становятся safety net для кода, написанного AI.
+- **BRAT**: уже статически типизирован, нет лайфтаймов — проще для AI-генерации.
+- **Вывод**: BRAT должен поддерживать AI-инструменты (LSP, четкие ошибки, предсказуемый код).
+
+## 7. Источники
 
 - Stack Overflow Developer Survey 2026.
+- GitHub Octoverse 2025/2026.
 - Rust: rustc-dev-guide, Miri, CVE-трекинг.
 - Go: `gofmt`, `go test`, `go build`.
 - Zig: simplicity, C-interop, comptime.
