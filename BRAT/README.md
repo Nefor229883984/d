@@ -1,45 +1,51 @@
-BRAT
+# BRAT
 
-Небольшой системный язык с ownership-проверкой, который компилируется в C. Ошибки это значения, `try/catch` ловит их без исключений, а `log` и `trace` встроены в синтаксис.
+Small systems language with ownership checking, compiled to C. Errors are values,
+`try/catch` catches them without exceptions, `log` and `trace` are syntax.
 
-Статус: v0.1, экспериментальный. Программы работают в двух бэкендах (интерпретатор на Python и C), и тесты сравнивают их вывод и код выхода побайтно.
+Status: v0.1, experimental. Programs run in two backends (Python interpreter and C);
+tests compare their output and exit codes byte-for-byte.
 
-Что работает
-- `fn`, `let`, `mut`, `if`, `while`, `match`, `for`, `vec`, `map`, структуры и варианты.
+## What works
+
+- `fn`, `let`, `mut`, `if`, `while`, `match`, `for`, `vec`, `map`, structs, variants.
 - `?`, `or`, `try/catch`, `defer`.
-- `log.info`, `trace.span` без импортов.
-- Проверка владения (`move`, заёмы) внутри функции. Ошибки выдаются с файлом, строкой и подсказкой.
-- Арены: блок `arena { ... }` сбрасывает память разом при выходе, `own(x)` выносит копию наружу. Правила выхода проверяет чекер (см. `docs/design/ARENA.md`).
-- Сборка в один нативный бинарник: `brat build`, без рантайма и без установки чего-либо на целевой машине.
-- `brat build --mem 16M` вшивает жёсткий лимит адресного пространства в бинарник: программа либо укладывается в бюджет, либо громко падает.
+- `log.info`, `trace.span` without imports.
+- Ownership checking (`move`, borrows) inside functions. Errors include file, line, hint.
+- Arenas: `arena { ... }` resets memory on exit; `own(x)` copies out. Escape rules checked.
+- Native binary: `brat build`, no runtime, no install on target.
+- `brat build --mem 16M` bakes a hard address-space limit into the binary.
 
-Что пока не работает
-- `move` не инвалидирует исходное значение в рантайме; проверка работает только статически и внутри функции.
-- Каналы, C-интероп и `scope` ещё не реализованы (см. `docs/design/ARENA.md`).
-- LLVM-бэкенд есть как proof-of-concept, он не обязателен и тестами пропускается без `llvmlite`.
+## What doesn't work yet
 
-Быстрый старт
-Запуск интерпретатором:
+- `move` doesn't invalidate at runtime; check is static and intra-function.
+- Channels, C-interop, `scope` not implemented (see `docs/design/ARENA.md`).
+- LLVM backend is proof-of-concept; tests skip without `llvmlite`.
+
+## Quick start
+
+Interpreter:
     python3 lang/engine/cli.py run lang/examples/hello.brat
 
-Проверка без запуска:
+Check without running:
     python3 lang/engine/cli.py check lang/examples/own_bad.brat
 
-Сборка нативного бинарника:
+Native binary:
     python3 lang/engine/cli.py build lang/examples/hello.brat -o hello
 
-Структура
-- `lang/engine` — парсер, чекер, интерпретатор, C-кодогенератор, рантайм `crt.h`.
-- `lang/examples` — рабочие программы, на которых тесты проверяют оба бэкенда.
-- `lang/spec/SPEC.md` — спецификация v0.1.
-- `lang/tests` — тесты: `test_lang.py`, `test_native.py`, `test_diff.py` и остальные.
-- `lang/servers` — пример сервера, он не запускается тестами, потому что работает бесконечно.
-- `bench` — бенчмарки; каждое число в нём воспроизводится командой из того же README.
-- `docs` — документация, с индексом в `docs/README.md`.
+## Structure
 
-Тесты
+- `lang/engine` — parser, checker, interpreter, C codegen, runtime `crt.h`.
+- `lang/examples` — working programs, both backends tested.
+- `lang/spec/SPEC.md` — v0.1 spec.
+- `lang/tests` — `test_lang.py`, `test_native.py`, `test_diff.py`, etc.
+- `bench` — benchmarks, every number reproducible.
+- `docs` — docs, index in `docs/README.md`.
+
+## Tests
+
     python3 lang/tests/test_lang.py
 
-Полный набор запускает каждый файл `lang/tests/test_*.py` отдельно. На одном ядре он занимает около трёх минут.
+Full suite runs each `lang/tests/test_*.py` separately. ~3 min on one core.
 
-Лицензия: Apache-2.0, см. LICENSE.
+License: Apache-2.0, see LICENSE.
