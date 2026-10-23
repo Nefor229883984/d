@@ -217,30 +217,27 @@ class FnTyper:
         self.ret = ret
         self.errs = errs
         self.env = {}
-        self.arena = []   # one set per open arena block: names declared inside it
-        self.tainted = []  # outer containers that now hold arena memory
-        self.region = 0     # monotonic region id counter
-        self.regions = {}   # name -> region id (0 = heap/global)
-        self.region_stack = [0]  # 0 = heap/global
+        self.tainted = []
+        self.region = 0
+        self.regions = {}
+        self.region_stack = [0]
 
     def current_region(self):
         return self.region_stack[-1]
 
     def inner(self, name):
         r = self.regions.get(name, 0)
-        return self.arena and r != 0 and r == self.current_region()
+        return self.current_region() != 0 and r != 0 and r == self.current_region()
 
     def declare(self, name):
         if isinstance(name, str):
-            if self.arena:
-                self.arena[-1].add(name)
+            if self.current_region() != 0:
                 self.regions[name] = self.current_region()
             else:
                 self.regions[name] = 0
 
     def taint(self, name):
-        # region-based: taint only outer (non-inner) containers
-        if (self.arena and isinstance(name, str)
+        if (self.current_region() != 0 and isinstance(name, str)
                 and self.regions.get(name, 0) != self.current_region()):
             if not self.tainted:
                 self.tainted.append(set())
@@ -255,8 +252,6 @@ class FnTyper:
         return False
 
     def non_scalar_inner(self, names):
-        # region-based: a name carries arena memory if its region is non-zero (inner)
-        # and its type is not scalar.
         out = []
         for n in names:
             r = self.regions.get(n, 0)
@@ -268,7 +263,7 @@ class FnTyper:
 
     def escapes(self, e):
         """True when value e may carry arena memory out of the innermost block."""
-        if not self.arena or not isinstance(e, tuple) or not e:
+        if self.current_region() == 0 or not isinstance(e, tuple) or not e:
             return False
         ms = mentions(e, set())
         if not self.non_scalar_inner(ms) and not any(self.is_tainted(n) for n in ms):
@@ -470,21 +465,19 @@ class FnTyper:
             if want != "dyn" and not ok(want, got):
                 self.errs.note("let `%s`: annotated %s, got %s" % (s[1], tname(want), tname(got)))
             self.env[s[1]] = want if want != "dyn" else got
-            # A binding made from an outer container is an alias of it, not a new value.
             outer_alias = any(not self.inner(n) and self.env.get(n, "dyn") not in self.SCALAR
                               for n in mentions(s[2], set()) if n != s[1])
             if not outer_alias:
                 self.declare(s[1])
-            # Propagate taint: an alias of a tainted outer container is tainted too.
-            if self.arena and isinstance(s[1], str) and any(self.is_tainted(n) for n in mentions(s[2], set())):
+            if self.current_region() != 0 and isinstance(s[1], str) and any(self.is_tainted(n) for n in mentions(s[2], set())):
                 self.taint(s[1])
-            if self.arena and has_node(s[2], "closure") and self.non_scalar_inner(mentions(s[2], set())):
+            if self.current_region() != 0 and has_node(s[2], "closure") and self.non_scalar_inner(mentions(s[2], set())):
                 self.arena_note("a closure inside the block captures a value made in it",
                                 ownable=False)
         elif k == "set":
             got = self.expr(s[2])
             target = s[1].split(".", 1)[0]
-            if self.arena and not self.inner(target) and self.escapes(s[2]):
+            if self.current_region() != 0 and not self.inner(target) and self.escapes(s[2]):
                 self.arena_note("a value made inside the block is assigned to `%s`, "
                                 "which lives outside it" % target)
                 self.taint(target)
@@ -505,7 +498,7 @@ class FnTyper:
             self.expr(s[2])
             self.expr(s[3])
             root = first_var(s[1])
-            if self.arena and root and not self.inner(root) and self.escapes(s[3]):
+            if self.current_region() != 0 and root and not self.inner(root) and self.escapes(s[3]):
                 self.arena_note("a value made inside the block is stored into `%s`, "
                                 "which lives outside it" % root)
                 self.taint(root)
@@ -513,7 +506,7 @@ class FnTyper:
             bt = self.expr(s[1])
             got = self.expr(s[3])
             root = first_var(s[1])
-            if self.arena and root and not self.inner(root) and self.escapes(s[3]):
+            if self.current_region() != 0 and root and not self.inner(root) and self.escapes(s[3]):
                 self.arena_note("a value made inside the block is stored into `%s`, "
                                 "which lives outside it" % root)
                 self.taint(root)
@@ -532,7 +525,7 @@ class FnTyper:
         elif k == "expr":
             self.expr(s[1])
             e = s[1]
-            if self.arena and isinstance(e, tuple) and e:
+            if self.current_region() != 0 and isinstance(e, tuple) and e:
                 if e[0] == "mcall":
                     root = first_var(e[1])
                     args = [a for a in e[3] if not (isinstance(a, tuple) and a and a[0] == "closure")]
@@ -557,10 +550,8 @@ class FnTyper:
             if is_arena_block(s):
                 self.region += 1
                 self.region_stack.append(self.region)
-                self.arena.append(set())
                 self.tainted.append(set())
                 self.block(s[2])
-                self.arena.pop()
                 self.tainted.pop()
                 self.region_stack.pop()
             else:
@@ -608,9 +599,9 @@ class FnTyper:
                 else:
                     self.env[s[3]] = old
         elif k == "spawn":
-            if self.arena and self.non_scalar_inner(mentions(s[1], set())):
+            if self.current_region() != 0 and self.non_scalar_inner(mentions(s[1], set())):
                 self.arena_note("a spawn inside the block captures a value made in it")
-            if self.arena and any(self.is_tainted(n) for n in mentions(s[1], set())):
+            if self.current_region() != 0 and any(self.is_tainted(n) for n in mentions(s[1], set())):
                 self.arena_note("a spawn inside the block captures a value made in it",
                                 ownable=False)
             self.block(s[1])
