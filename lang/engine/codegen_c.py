@@ -313,6 +313,7 @@ class Emitter:
         self.seen_mods = set()
         self.spliced = set()
         self.top_exe = []
+        self.global_lets = set()
         self.out = []
         self.sym = {}
         self.cap = None
@@ -847,6 +848,8 @@ class Emitter:
                 self.collect_top(s, base)
             elif s[0] not in ("fn", "impl", "trait", "enum", "pub", "extern", "externstruct", "exportfn"):
                 self.top_exe.append(("stmt", s))
+                if s[0] == "let":
+                    self.global_lets.add(s[1])
 
     def collect_top(self, s, base):
         k = s[0]
@@ -1718,6 +1721,16 @@ class Emitter:
             return
         if k == "let":
             _, name, e = s[0], s[1], s[2]
+            if name in self.global_lets and self.fin == "__fin_top":
+                pre, v = self.ex(e)
+                for p in pre:
+                    self.out.append(ind + p)
+                self.out.append(ind + "%s = (%s);" % (_cname(name), v))
+                self.emit_err_check(ind)
+                for ln in self._share_root(e):
+                    self.out.append(ind + ln)
+                self.assigned.add(name)
+                return
             pre, v = self.ex(e)
             for p in pre:
                 self.out.append(ind + p)
@@ -2482,8 +2495,12 @@ class Emitter:
         scan_stmts([s for _, s in self.top_exe], self.mod_bases[0] if self.mod_bases else ".")
         self.dfb_locals = set(names)
         for n in sorted(names):
+            if n in self.global_lets:
+                continue
             self.sym[n] = Sym(_cname(n), "copy")
             self.out.append("  volatile Val %s;" % _cname(n))
+        for n in sorted(self.global_lets):
+            self.sym[n] = Sym(_cname(n), "copy")
         for n in sorted(self.relet & names):
             self.out.append("  %s = vnil();" % _cname(n))
 
@@ -2674,6 +2691,10 @@ class Emitter:
         for _cb_name, _cret, _cparams in self._cb_wrappers:
             self.out.append("%s brat_cb_%s(%s);" % (_cret, _cb_name, ", ".join(_cparams)))
         self.out.append("")
+        if self.global_lets:
+            for _gn in sorted(self.global_lets):
+                self.out.append("Val %s;" % _cname(_gn))
+            self.out.append("")
         self.run_pipeline()
         self.reclaim, self.relet = _reclaim_names(
             [s for k, s in self.top_exe if k == "stmt"], set())
@@ -2695,12 +2716,12 @@ class Emitter:
                     _pushes.append("vec_push(_a, vint((long long)%s));" % _arg)
                 elif isinstance(_ann, str) and _ann in self.structs:
                     _pushes.append("vec_push(_a, %s);" % self._c_struct_to_val(_ann, _arg))
-            _cname = self.cfn("fn:" + _cb_name)
+            _cb_cname = self.cfn("fn:" + _cb_name)
             self.out.append("%s brat_cb_%s(%s) {" % (_cret, _cb_name, ", ".join(_cparams)))
             self.out.append("  Vec *_a = vvec();")
             for _push in _pushes:
                 self.out.append("  " + _push)
-            self.out.append("  Val _r = %s(NULL, _a);" % _cname)
+            self.out.append("  Val _r = %s(NULL, _a);" % _cb_cname)
             if _cb_ret in (None, "none"):
                 self.out.append("  (void)_r;")
             elif _cb_ret == "str":
@@ -2770,13 +2791,13 @@ class Emitter:
                 _cret = "void *"
             else:
                 continue
-            _cname = self.cfn("fn:" + _ex_name)
+            _ex_cname = self.cfn("fn:" + _ex_name)
             self.out.append("")
             self.out.append("%s %s(%s) {" % (_cret, _ex_name, ", ".join(_cparams)))
             self.out.append("  Vec *_a = vvec();")
             for _push in _pushes:
                 self.out.append("  " + _push)
-            self.out.append("  Val _r = %s(NULL, _a);" % _cname)
+            self.out.append("  Val _r = %s(NULL, _a);" % _ex_cname)
             if _ex_ret in (None, "none"):
                 self.out.append("  (void)_r;")
             elif _ex_ret == "str":
