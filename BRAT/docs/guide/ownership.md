@@ -1,113 +1,105 @@
-docs/guide/ownership.md — что проверяет чекер владения
+# Ownership checker — what it checks
 
-Единая точка правды: `borrow.py`. Порт на самом BRAT — `bratb.brat`, и
-`test_bratb.py` гоняет оба по всем файлам корпуса и требует побайтово
-одинаковых сообщений. Если порт и оригинал расходятся — это баг порта.
+Single source of truth: `borrow.py`. The BRAT port is `bratb.brat`; `test_bratb.py`
+runs both on every corpus file and requires byte-identical messages. Divergence
+is a bug in the port.
 
-Как запустить
+## How to run
 
 ```
-python -X utf8 lang/engine/cli.py check file.brat    # владение + типы
-python -X utf8 lang/tests/test_ownership.py           # 87 случаев (57 reject + 30 accept, 177 ассертов)
-python -X utf8 lang/tests/test_bratb.py               # чекер против чекера
+python3 lang/engine/cli.py check file.brat    # ownership + types
+python3 lang/tests/test_ownership.py           # 87 cases (57 reject + 30 accept, 177 asserts)
+python3 lang/tests/test_bratb.py               # checker vs checker
 ```
 
-Модель
+## Model
 
-Vale linear-aliasing: одно владение, перемещения, без borrow-checker-синтаксиса.
-Чекер внутрифункциональный: гарантии не переходят границу функции (кроме
-проверки модов на месте вызова — `fn eat(s: move str)` двигает аргумент,
-`fn peek(s: ref str)` занимает на время вызова).
+Vale linear-aliasing: single ownership, moves, no borrow-checker syntax. The
+checker is intra-function: guarantees don't cross function boundaries (except
+mode checks at call sites — `fn eat(s: move str)` moves the argument, `fn peek(s: ref str)`
+borrows for the call).
 
-Место (place) — это путь: `x`, `x.f`, `x.f.g`, `x[i]` (индекс — `x.*`).
-Владение рассматривается по пути, а не по имени: `move p.x` инвалидирует
-только `p.x`, sibling-поля живы.
+A **place** is a path: `x`, `x.f`, `x.f.g`, `x[i]` (index is `x.*`). Ownership
+is tracked per path, not per name: `move p.x` invalidates only `p.x`, sibling
+fields stay alive.
 
-Что действительно проверяется
+## What is checked
 
-| Правило | Диагностика |
+| Rule | Diagnostic |
 |---|---|
 | use-after-move | `use of moved `x`` + `note: `x` moved here` |
 | double move | `use of moved `x`` |
-| move под займом | `cannot move `x` while borrowed by `y`` |
-| присваивание в иммутабельное | `assign to immutable `x` (want `let mut` or mut param)` |
-| присваивание в `const` | `assign to const `x`` |
-| мутация через builtin-метод | `cannot mutate immutable `x`: `x.push` writes through it` |
-| двойной mut-займ | `double mut borrow of `x`...` |
-| mut self на иммутабельном приёмнике | `cannot mutate immutable `x`: `f` takes mut self` |
-| Law of Exclusivity на вызове | `law of exclusivity: ...` |
-| pass immutable как mut-параметр | `pass immutable `x` as mut param `p`` |
-| побег `ref` через return | `ref `x` escapes via return` |
-| побег `ref` через spawn | `ref `x` escapes via spawn` |
-| запись через mut-алиас владельца | `write through `y` mutates immutable `x`` |
-| элементная запись на иммутабельном | `assign to immutable `m`...` |
-| необъявленная переменная/функция | `use of undeclared var `x`` |
-| conformance трейта | `impl Shout for Point missing loud` |
+| move under borrow | `cannot move `x` while borrowed by `y`` |
+| assign to immutable | `assign to immutable `x` (want `let mut` or mut param)` |
+| assign to const | `assign to const `x`` |
+| mutate via builtin method | `cannot mutate immutable `x`: `x.push` writes through it` |
+| double mut borrow | `double mut borrow of `x`...` |
+| mut self on immutable receiver | `cannot mutate immutable `x`: `f` takes mut self` |
+| Law of Exclusivity at call | `law of exclusivity: ...` |
+| pass immutable as mut param | `pass immutable `x` as mut param `p`` |
+| `ref` escape via return | `ref `x` escapes via return` |
+| `ref` escape via spawn | `ref `x` escapes via spawn` |
+| write through mut alias of owner | `write through `y` mutates immutable `x`` |
+| element write on immutable | `assign to immutable `m`...` |
+| undeclared var/function | `use of undeclared var `x`` |
+| trait conformance | `impl Shout for Point missing loud` |
 
-NLL-lite
+## NLL-lite
 
-Заём живёт до последнего использования заёмщика, а не до конца бока. Держатель,
-который больше не появляется в блоке, отпускает заём на собственном стэйтменте:
+A borrow lives until the last use of the borrower, not to the end of the block.
+A holder that never appears again releases the borrow at its own statement:
 
 ```
 let s = "x"
-let _r = s          // заем, _r больше не используется
-let m = move s      // легально: _r отпустил заём
+let _r = s          // borrow, _r never used again
+let m = move s      // legal: _r released the borrow
 ```
 
-(Ровно это проверяют кейсы b04/b05. До фикса неиспользованный держатель пинил
-заём до конца блока, и легальный код отвергался.)
+(Cases b04/b05 check exactly this. Before the fix, an unused holder pinned
+the borrow to the end of the block and legal code was rejected.)
 
-Ветвления: блок if/try walksятся дважды и мержатся консервативно — движение в
-одной ветке делает переменную moved после. Циклы walkдва прохода: move, легальный
-на первом, — use-after-move на втором.
+Branches: if/try walked twice, merged conservatively — a move in one branch
+makes the variable moved after. Loops walked twice: a move legal on the first
+pass becomes use-after-move on the second.
 
-Статус звуковости по дырам
+## Soundness status by hole
 
-Каждая дыра либо закрыта кодом, либо помечена доказанно-звуковой с обоснованием.
-Ниже — статус на момент фикса.
+Each hole is either closed by code or marked sound with justification.
 
-1. **Возврат голого параметра (a13) — доказанно звучно.** `return <параметр>`
-   возвращает *вью* на хранилище вызывающего: вызывающий владеет этим хранилищем
-   и оно переживает вызов, так что ссылка не висит. В BRAT нет типа возврата
-   `-> ref`, поэтому это трактуется как вью, а не как передача владения, и
-   принимается (тесты `a13`/`a14` требуют принятия). Тип возврата несёт
-   `-> T` (значение/вью), а не `-> ref T`; таких возвратов в корпусе много,
-   в том числе в `bratb.brat`, и они легальны.
+1. **Returning a bare parameter (a13) — provably sound.** `return <param>`
+   returns a *view* into the caller's storage: the caller owns it and it outlives
+   the call, so the reference doesn't dangle. BRAT has no `-> ref` return type,
+   so this is treated as a view, not ownership transfer, and is accepted (tests
+   `a13`/`a14` require acceptance). Many returns in the corpus (incl.
+   `bratb.brat`) are legal views.
+2. **`move` has no runtime effect — soundness is fully on the checker.** In all
+   backends `move x` is a read of `x`, so a checker error means silent buffer
+   aliasing, not a crash. The checker conservatively rejects everything
+   unproven: use-after-move, partial path moves (`moved_paths`), move under a
+   live borrow. Unproven moves are rejected.
+3. **`spawn` and data races — soundness boundary.** The checker rejects two
+   specific threats: (a) `ref` escape via `spawn` (`B0521`) and (b) write to a
+   captured binding inside the frame (lost write, `spawn_frozen`). Shared mutable
+   state between threads is the user's responsibility: v0.1 has no `Send`/`Sync`,
+   the frame is copied, so a shared non-Copy binding in `spawn` is an agreement,
+   not something the checker can prove.
+4. **`ref` escape via closure — CLOSED.** `escaping_refs` runs on `return`
+   inside a closure body (via `walk_closure_arg` → `walk_block`). A `ref` to a
+   local escaping through a closure return is rejected; a `ref` to a parameter
+   is allowed (caller's storage).
+5. **Write through field of immutable struct — CLOSED.** One rule for `.f` and
+   `[i]`: the root path's `mut` is checked (`set` and `setidx` both strict on
+   root). `p.items[0] = 9` and `p.items = [3]` on immutable `let p` are both
+   errors (`assign to immutable`).
+6. **Inter-procedural — by signature.** The checker doesn't infer invariants
+   across calls: what `f(a)` does to `a` is declared by the signature
+   (`move`/`mut`/`ref`). No hidden mutation through `ref` params; everything
+   else is an agreement between caller and callee.
 
-2. **`move` без рантайм-эффекта — звуковость полностью на чекере.** Во всех
-   бэкендах `move x` — чтение `x`, поэтому ошибка чекера означает тихое
-   алиасирование буфера, а не падение. Чекер консервативно отвергает всё
-   недоказанное: use-after-move, частичное перемещение по пути (`moved_paths`),
-   перемещение под живым заёмом. Неподтверждённое перемещение отвергается.
+## What "incomplete" means
 
-3. **`spawn` и гонки данных — граница звуковости.** Чекер уже отвергает две
-   конкретные угрозы: (a) побег `ref` через `spawn` (`B0521`) и (b)
-   перезапись захваченного связывания внутри кадра (потерянная запись,
-   `spawn_frozen`). Разделяемое мутабельное состояние между потоками —
-   ответственность пользователя: в v0.1 нет `Send`/`Sync`, кадр копируется,
-   так что общий не-Copy биндинг в `spawn` — это договорённость, а не то, что
-   чекер может доказать.
-
-4. **Побег `ref` через замыкание — ЗАКРЫТО.** `escaping_refs` прогоняется на
-   `return` внутри тела замыкания (через `walk_closure_arg` → `walk_block`).
-   `ref` на локальную переменную, утекающий через возврат замыкания,
-   отвергается; `ref` на параметр допускается (хранилище вызывающего).
-
-5. **Запись через поле иммутабельной структуры — ЗАКРЫТО.** Одно правило для
-   `.f` и `[i]`: проверяется `mut` владельца корня пути (`set` и `setidx`
-   обе проводят strict-проверку корня). `p.items[0] = 9` и `p.items = [3]`
-   за иммутабельным `let p` — обе ошибки (`assign to immutable`).
-
-6. **Межфункциональность — по сигнатуре.** Borrow-checker не выводит
-   инвариантов через вызовы: что делает `f(a)` с `a`, задаёт сигнатура
-   (`move`/`mut`/`ref`). Скрытой мутации через `ref`-параметр нет; всё
-   остальное — договорённость между вызывающим и каллее.
-
-Что означает «неполный»
-
-«Неполный» = есть программы, которые чекер пропускает, а по-хорошему должен
-был бы отвергнуть (дыры 2, 3, 6 выше — граница звуковости, задокументированные).
-Обратного нет: все reject-кейсы в `test_ownership.py` зелёные (exit≠0 и
-ожидаемая диагностика). Зелёных ACCEPT-кейсов стало больше
-после фикса NLL: раньше чекер отвергал легальный код.
+"Incomplete" = programs the checker accepts that it arguably should reject
+(holes 2, 3, 6 above — soundness boundary, documented). The reverse doesn't
+happen: all reject cases in `test_ownership.py` are green (exit≠0 and expected
+diagnostic). ACCEPT cases grew after the NLL fix: previously the checker
+rejected legal code.
