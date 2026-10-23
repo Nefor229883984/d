@@ -8,7 +8,8 @@ Public documentation for BRAT. All files here are about the language.
 2. **[guide/why.md](guide/why.md)** — why BRAT, comparison with Rust, Go, Zig, OCaml, Swift. Read "Where BRAT loses to Rust" first.
 3. **[guide/tour.md](guide/tour.md)** — full language tour in an hour. Snippets are real files from `lang/examples/`.
 4. **[guide/ownership.md](guide/ownership.md)** — ownership model: what is checked, real diagnostics, known holes with repros. Read before touching `move`.
-5. **[../bench/README.md](../bench/README.md)** — what was measured, how to reproduce, what was never measured.
+5. **[guide/ffi.md](guide/ffi.md)** — C interop: extern, structs, callbacks, pointers, bindgen, export fn.
+6. **[../bench/README.md](../bench/README.md)** — what was measured, how to reproduce, what was never measured.
 6. **[../CONTRIBUTING.md](../CONTRIBUTING.md)** — repo rules: no change without a run, honesty over percentages.
 
 ## Related docs outside `docs/`
