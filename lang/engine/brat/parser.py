@@ -84,6 +84,12 @@ def _parse_stmt(c):
         return parse_extern(c)
     if t.k == 'KW' and t.v == 'fn':
         return parse_fn(c)
+    if t.k == 'KW' and t.v == 'unsafe':
+        c.step()
+        c.want('{')
+        b = parse_block(c)
+        c.want('}')
+        return ('unsafe', b)
     if t.k == 'KW' and t.v == 'if':
         return parse_if(c)
     if t.k == 'KW' and t.v == 'while':

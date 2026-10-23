@@ -458,6 +458,10 @@ class FnTyper:
         if ln is not None:
             self.errs.line = ln
         k = s[0]
+        if k == "unsafe":
+            for ss in s[1]:
+                self.stmt(ss)
+            return
         if k == "let":
             ann = s[5] if len(s) > 5 else None
             want = ann_type(ann)

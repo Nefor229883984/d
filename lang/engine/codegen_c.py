@@ -67,7 +67,9 @@ def _collect_vars(body, acc):
                 acc.add(s[3])
         elif k == "spawn":
             _collect_vars(s[1], acc)
-        elif k in ("fn", "impl", "trait", "enum", "pub", "import"):
+        elif k in ("fn", "impl", "trait", "enum", "pub", "import", "unsafe"):
+            if k == "unsafe":
+                _collect_vars(s[1], acc)
             pass
         elif k in ("expr", "return", "defer", "break", "continue", "setidx", "setfield"):
             pass
@@ -1622,6 +1624,9 @@ class Emitter:
 
     def st(self, s, ind):
         k = s[0]
+        if k == "unsafe":
+            self.emit_block(s[1], ind)
+            return
         if k == "let":
             _, name, e = s[0], s[1], s[2]
             pre, v = self.ex(e)
@@ -1885,6 +1890,8 @@ class Emitter:
             pass
         elif k == "pub":
             self.st(s[1], ind)
+        elif k == "unsafe":
+            self.collect_nested(s[1]) if isinstance(s[1], list) else None
         else:
             raise RuntimeError("stmt " + k)
 

@@ -450,6 +450,8 @@ def used_in_stmt(s, acc):
         used_in_block(s[2], acc)
     elif k == "spawn":
         used_in_block(s[1], acc)
+    elif k == "unsafe":
+        used_in_block(s[1], acc)
     elif k == "defer":
         vars_in(s[1], acc)
     elif k == "impl":
@@ -1099,6 +1101,8 @@ def walk_stmt(s, decl, borrows, errs, funcs):
     elif k == "defer":
         check_expr(s[1], decl, errs, funcs)
         scan_calls(s[1], decl, borrows, errs, funcs, [])
+    elif k == "unsafe":
+        walk_block(s[1], copy_decl(decl), copy_borrows(borrows), errs, funcs)
     elif k == "import":
         return
     elif k == "extern":

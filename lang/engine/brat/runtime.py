@@ -1609,7 +1609,9 @@ def run_stmt(s, env, funcs):
 
 def _run_stmt(s, env, funcs):
     k = s[0]
-    if k == 'let':
+    if k == 'unsafe':
+        run_block(s[1], env, funcs)
+    elif k == 'let':
         _bind(env[-1], s[1], ev(s[2], env, funcs))
     elif k == 'set':
         name = s[1]
