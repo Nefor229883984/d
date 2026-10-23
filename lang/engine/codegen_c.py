@@ -1631,21 +1631,39 @@ class Emitter:
             for ln in self._share_root(e):
                 self.out.append(ind + ln)
         elif k == "set":
-            pre, v = self.ex(s[2])
-            for p in pre:
-                self.out.append(ind + p)
             tgt = s[1]
             d = self.sym.get(tgt)
-            own = self._own_of(s[2])
-            if tgt in self.reclaim and v.startswith("vlit("):
-                v = "vstr(" + v[5:]  # a release needs a real rc header
+            self_concat = (isinstance(s[2], tuple) and s[2] and s[2][0] == "bin"
+                           and s[2][1] == "+" and isinstance(s[2][2], tuple)
+                           and s[2][2][0] == "var" and s[2][2][1] == tgt)
+            if self_concat:
+                pre, v = self.ex(s[2][3])
+                for p in pre:
+                    self.out.append(ind + p)
+                own = "owned"
+                cn_tmp = self.var_def(tgt, own)[1]
+                v = "vadd_self(%s, %s)" % (cn_tmp, v)
+            else:
+                pre, v = self.ex(s[2])
+                for p in pre:
+                    self.out.append(ind + p)
+                own = self._own_of(s[2])
+                if tgt in self.reclaim and v.startswith("vlit("):
+                    v = "vstr(" + v[5:]  # a release needs a real rc header
+                    own = "owned"
+            if tgt in self.reclaim and v.startswith("vlit(") and not self_concat:
+                v = "vstr(" + v[5:]
                 own = "owned"
             release = (tgt in self.reclaim and d is not None
                        and tgt not in self.moved and tgt not in self.dropped
-                       and self._place_root(s[2]) != tgt)
+                       and (self._place_root(s[2]) != tgt if not self_concat else True))
             cn = self.var_def(tgt, own)[1]
             self.assigned.add(tgt)
-            if release:
+            if self_concat:
+                tmp = self.new_tmp("v")
+                self.out.append(ind + "volatile Val %s = (%s);" % (tmp, v))
+                self.out.append(ind + "%s = %s;" % (cn, tmp))
+            elif release:
                 # after the RHS so a hot store loop pays one dec per store, not per element
                 tmp = self.new_tmp("v")
                 self.out.append(ind + "volatile Val %s = (%s);" % (tmp, v))

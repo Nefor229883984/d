@@ -64,7 +64,7 @@ static pthread_mutex_t _brat_ctr_lock = PTHREAD_MUTEX_INITIALIZER;
 #define BRAT_CTR_UNLOCK() ((void)0)
 #endif
 
-typedef struct BHead { long rc; } BHead;
+typedef struct BHead { long rc; long cap; } BHead;
 BFN void vraise(const char *msg);
 BFN void vraisef(const char *fmt, const char *arg);
 BFN int verr_pending(void);
@@ -195,11 +195,13 @@ BFN void *balloc(size_t n) {
         BHead *ah = (BHead *)(base + sizeof(size_t));
         memset(ah, 0, sizeof(BHead) + n);
         ah->rc = 1 | BARENA_FLAG;
+        ah->cap = (long)n;
         return ah + 1;
     }
     BHead *h = (BHead *)calloc(1, sizeof(BHead) + n);
     if (!h) vfatal_oom();
     h->rc = 1;
+    h->cap = (long)n;
     return h + 1;
 }
 BFN void *bgrow_rc(void *p, size_t n) {
@@ -212,6 +214,7 @@ BFN void *bgrow_rc(void *p, size_t n) {
     }
     void *q = realloc(h, sizeof(BHead) + n);
     if (!q) { vfatal_oom(); }
+    ((BHead *)q)->cap = (long)n;
     return (BHead *)q + 1;
 }
 /* Container arrays follow their container: an arena container takes its arrays
@@ -859,7 +862,7 @@ BFN Val vadd(Val a, Val b) {
         const char *sa = (a.tag == V_STR) ? a.as.str : vtxt(a);
         const char *sb = (b.tag == V_STR) ? b.as.str : vtxt(b);
         size_t la = strlen(sa), lb = strlen(sb);
-        
+
         char *out = (char *)balloc(la + lb + 1);
         Val r; r.tag = V_STR;
         r.as.str = out;
@@ -884,6 +887,44 @@ BFN Val vadd(Val a, Val b) {
     }
     vraise("type error in +"); return vunwind;
 }
+/* In-place string append for the `s = s + x` hot loop. Mutates the
+   buffer only when it is uniquely owned (rc == 1); otherwise falls back to
+   vadd. The rc is bumped to 2 on the in-place path so the caller's release of
+   the old value leaves exactly one reference. */
+BFN Val vadd_self(Val a, Val b) {
+    if (a.tag == V_STR && a.as.str) {
+        const char *sb = (b.tag == V_STR) ? b.as.str : vtxt(b);
+        if (sb && a.as.str != sb) {
+            BHead *h = (BHead *)a.as.str - 1;
+            if (!BIS_ARENA(h)) {
+                long rc = h->rc & ~BARENA_FLAG;
+                if (rc == 1) {
+                    size_t la = strlen(a.as.str), lb = strlen(sb);
+                    size_t need = la + lb + 1;
+                    if ((size_t)h->cap < need) {
+                        size_t nc = h->cap > 0 ? (size_t)h->cap : 16;
+                        while (nc < need) nc *= 2;
+                        BHead *nh = (BHead *)realloc(h, sizeof(BHead) + nc);
+                        if (!nh) vfatal_oom();
+                        nh->cap = (long)nc;
+                        a.as.str = (char *)nh + sizeof(BHead);
+                        h = nh;
+                    }
+                    memcpy(a.as.str + la, sb, lb);
+                    a.as.str[la + lb] = 0;
+                    /* rc stays 1: this function owns the release of the old value */
+                    return a;
+                }
+            }
+        }
+    }
+    Val _r = vadd(a, b);
+    vrc_dec(a);
+    return _r;
+}
+
+
+
 BFN Val vsub(Val a, Val b) {
     a = vnum0(a); b = vnum0(b);
     if (a.tag == V_INT && b.tag == V_INT)
