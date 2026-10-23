@@ -1093,21 +1093,33 @@ def do_bindgen(args):
                     continue
                 # type may be "type name" or just "type"
                 if "*" in part:
+                    _pname = part.split()[-1] if part.split() else "_%d" % len(plist)
+                    _pname = _pname.lstrip("*").split("[")[0]
+                    if not _pname.isidentifier():
+                        _pname = "_%d" % len(plist)
                     if "char" in part:
-                        plist.append("str")
+                        plist.append(("str", _pname))
                     else:
-                        plist.append("ptr")
+                        plist.append(("ptr", _pname))
                     continue
                 toks = part.split()
                 if len(toks) >= 2:
                     ty = " ".join(toks[:-1])
+                    _pname = toks[-1]
                 else:
                     ty = toks[0] if toks else "void"
-                plist.append(_map_c_type(ty))
+                    _pname = "_%d" % len(plist)
+                if not _pname.isidentifier():
+                    _pname = "_%d" % len(plist)
+                plist.append((_map_c_type(ty), _pname))
             vtail = " ..ptr" if varargs else ""
         named = []
-        for idx, ty in enumerate(plist):
-            named.append("_%d: %s" % (idx, ty))
+        for idx, item in enumerate(plist):
+            if isinstance(item, tuple):
+                ty, pname = item
+            else:
+                ty, pname = item, "_%d" % idx
+            named.append("%s: %s" % (pname, ty))
         if vtail:
             named.append("..ptr")
         args = ", ".join(named)
