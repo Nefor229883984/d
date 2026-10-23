@@ -1,37 +1,25 @@
-docs — публичная документация BRAT
+# BRAT docs
 
-Карта чтения. Все файлы здесь — про язык BRAT.
+Public documentation for BRAT. All files here are about the language.
 
-Порядок чтения
+## Reading order
 
-1. **[guide/index.md](guide/index.md)** — что это, 60-секундный hello, честный статус, быстрый старт.
-   Начните отсюда, если раньше не видели BRAT.
-2. **[guide/why.md](guide/why.md)** — зачем язык, сравнение с Rust, Go, Zig, OCaml, Swift.
-   Раздел «Где BRAT проигрывает Rust» — обязательное чтение перед любым
-   сравнением с Rust.
-3. **[guide/tour.md](guide/tour.md)** — тур по языку целиком за час. Сниппеты — реальные
-   файлы из `lang/examples/`; рядом с каждым сказано, что именно прогнано —
-   запуск или `check`.
-4. **[guide/ownership.md](guide/ownership.md)** — модель владения: что действительно
-   проверяется, какие диагностики реальны, где дыры с воспроизводимым репро.
-   Читать до того, как писать код, который трогает `move`.
-5. **[../bench/README.md](../bench/README.md)** — что и чем мерялось, как
-   воспроизвести, чего меряли никогда. Читать перед любым заявлением про
-   скорость.
-6. **[../CONTRIBUTING.md](../CONTRIBUTING.md)** — правила репозитория: правка
-   без прогона не принимается, честность выше процентов. Для контрибьюторов.
+1. **[guide/index.md](guide/index.md)** — what it is, 60-second hello, honest status, quick start.
+2. **[guide/why.md](guide/why.md)** — why BRAT, comparison with Rust, Go, Zig, OCaml, Swift. Read "Where BRAT loses to Rust" first.
+3. **[guide/tour.md](guide/tour.md)** — full language tour in an hour. Snippets are real files from `lang/examples/`.
+4. **[guide/ownership.md](guide/ownership.md)** — ownership model: what is checked, real diagnostics, known holes with repros. Read before touching `move`.
+5. **[../bench/README.md](../bench/README.md)** — what was measured, how to reproduce, what was never measured.
+6. **[../CONTRIBUTING.md](../CONTRIBUTING.md)** — repo rules: no change without a run, honesty over percentages.
 
-Смежные документы за пределами `docs/`
+## Related docs outside `docs/`
 
-- `lang/spec/SPEC.md` — спецификация v0.1, включая раздел 11 «что НЕ в v0.1».
-- `lang/spec/CHECKER_V2.md` — дизайн чекера следующей версии (пути-проекции,
-  Law of Exclusivity, usefulness по Марангету).
-- `docs/project/LEDGER.md` — построчный статус «боли Rust» против BRAT.
-- `docs/project/CHANGELOG.md` — что менялось.
+- `lang/spec/SPEC.md` — v0.1 spec, incl. §11 "not in v0.1".
+- `lang/spec/CHECKER_V2.md` — next checker design (path projections, Law of Exclusivity, Maranget usefulness).
+- `docs/project/LEDGER.md` — Rust pain points vs BRAT status.
+- `docs/project/CHANGELOG.md` — what changed.
 
-Что эти документы не обещают
+## What these docs don't promise
 
-Ни один файл в `docs/` не содержит цифр, которых нет в `docs/project/LEDGER.md`,
-и не повторяет утверждения о soundness, которых не подтверждает
-прогон. Там, где проверка неполна, написано «проверка неполна»
-и дан воспроизводимый пример. См. `docs/guide/ownership.md`, раздел «Известные дыры».
+No file in `docs/` contains numbers not in `docs/project/LEDGER.md`, and no
+soundness claim not backed by a run. Where checking is incomplete, it says so
+and gives a reproducible example. See `docs/guide/ownership.md`, "Known holes".
