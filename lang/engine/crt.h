@@ -64,7 +64,7 @@ static pthread_mutex_t _brat_ctr_lock = PTHREAD_MUTEX_INITIALIZER;
 #define BRAT_CTR_UNLOCK() ((void)0)
 #endif
 
-typedef struct BHead { long rc; long cap; } BHead;
+typedef struct BHead { long rc; long cap; long len; } BHead;
 BFN void vraise(const char *msg);
 BFN void vraisef(const char *fmt, const char *arg);
 BFN int verr_pending(void);
@@ -122,6 +122,7 @@ BFN Val vlit(const char *s) {
     barena_depth = saved;
     memcpy(p, s, n + 1);
     ((BHead *)p - 1)->rc = -1; /* immortal: never freed, never counted */
+    ((BHead *)p - 1)->len = (long)n;
     if (_vlit_n < 512) {
         _vlit_cache[_vlit_n].src = s;
         _vlit_cache[_vlit_n].ptr = p;
@@ -295,7 +296,7 @@ BFN void vmem_budget_apply(void) {
     }
 #endif
 }
-BFN Val vstrn(const char *s, long n) { Val v; v.tag = V_STR; v.as.str = (char *)balloc((size_t)n + 1); memcpy(v.as.str, s, n); v.as.str[n] = 0; return v; }
+BFN Val vstrn(const char *s, long n) { Val v; v.tag = V_STR; v.as.str = (char *)balloc((size_t)n + 1); memcpy(v.as.str, s, n); v.as.str[n] = 0; ((BHead *)v.as.str - 1)->len = n; return v; }
 BFN Vec *vvec(void) {
     Vec *v = (Vec *)balloc(sizeof(Vec));
     v->len = 0; v->cap = 4;
@@ -307,6 +308,7 @@ BFN Val vstr(const char *s) {
     Val v; v.tag = V_STR;
     v.as.str = (char *)balloc(n + 1);
     memcpy(v.as.str, s, n + 1);
+    ((BHead *)v.as.str - 1)->len = (long)n;
     return v;
 }
 BFN Val vvecv(Vec *v) { Val r; r.tag = V_VEC; r.as.vec = v; return r; }
@@ -869,6 +871,7 @@ BFN Val vadd(Val a, Val b) {
         memcpy(out, sa, la);
         memcpy(out + la, sb, lb);
         out[la + lb] = 0;
+        ((BHead *)out - 1)->len = (long)(la + lb);
         return r;
     }
     a = vnum0(a); b = vnum0(b);
@@ -899,7 +902,7 @@ BFN Val vadd_self(Val a, Val b) {
             if (!BIS_ARENA(h)) {
                 long rc = h->rc & ~BARENA_FLAG;
                 if (rc == 1) {
-                    size_t la = strlen(a.as.str), lb = strlen(sb);
+                    size_t la = (size_t)h->len, lb = strlen(sb);
                     size_t need = la + lb + 1;
                     if ((size_t)h->cap < need) {
                         size_t nc = h->cap > 0 ? (size_t)h->cap : 16;
@@ -912,6 +915,7 @@ BFN Val vadd_self(Val a, Val b) {
                     }
                     memcpy(a.as.str + la, sb, lb);
                     a.as.str[la + lb] = 0;
+                    h->len = (long)(la + lb);
                     /* rc stays 1: this function owns the release of the old value */
                     return a;
                 }
