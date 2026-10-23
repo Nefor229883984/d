@@ -117,7 +117,7 @@ Export: stdout JSON + OTel OTLP (runtime v0.3). Format: `{ts, lvl, msg, trace_id
 import net
 ```
 
-`mod` and `extern "C"` — roadmap (not supported as constructs by the parser). Index: `v[0]` with bounds check. `len(v)` for vec and str. Methods via dot:
+`mod` — roadmap (not supported). `extern ["lib"] fn name(params, ..T) -> type;`, `extern ["lib"] { extern ... }` blocks, and `extern struct Name { field: type; ... }` are supported for C functions/structs; types: `i32`, `i64`, `f64`, `str`, `ptr`, `none`, and extern struct names. `..T` marks a typed variadic tail. Without `lib`, libc/main handle is used. Index: `v[0]` with bounds check. `len(v)` for vec and str. Methods via dot:
 str: `split([sep])`, `lines()`, `trim()`, `lower()`, `upper()`,
   `starts_with(p)`, `ends_with(s)`, `contains(sub)`, `parse_int()`,
   `replace(a, b)`, `index_of(sub)` (index or None), `repeat(n)`,

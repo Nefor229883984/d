@@ -467,7 +467,7 @@ def used_in_stmt(s, acc):
         return acc
     elif k == "extern":
         return acc
-    elif k == "extern":
+    elif k == "externstruct":
         return acc
     elif k == "pub":
         used_in_stmt(s[1], acc)
@@ -1106,6 +1106,8 @@ def walk_stmt(s, decl, borrows, errs, funcs):
     elif k == "import":
         return
     elif k == "extern":
+        return
+    elif k == "externstruct":
         return
     elif k == "impl":
         seen = set()

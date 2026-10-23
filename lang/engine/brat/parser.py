@@ -76,12 +76,62 @@ def _parse_stmt(c):
         return parse_let(c, True)
     if t.k == 'KW' and t.v == 'extern':
         c.step()
+        block_lib = None
         if c.peek().k == 'STR':
+            block_lib = c.step().v.strip('"')
+        if c.peek().k == 'ID' and c.peek().v == 'struct':
+            c.step()  # struct
+            name = c.step().v
+            c.want('{')
+            fields = []
+            while c.peek().v != '}':
+                fname = c.step().v
+                c.want(':')
+                toks = []
+                depth = 0
+                while True:
+                    x = c.peek()
+                    if x.v in (',', '}') and depth == 0:
+                        break
+                    if x.v == '[':
+                        depth += 1
+                    if x.v == ']':
+                        depth -= 1
+                    toks.append(x.v)
+                    c.step()
+                ann = ann_text(toks)
+                fields.append((fname, ann))
+                if c.peek().v == ',':
+                    c.step()
+            c.want('}')
+            return ('externstruct', name, fields)
+        if c.peek().v == '{':
             c.step()
-        c.want('KW', 'fn') if False else None
-        if not (c.peek().k == 'KW' and c.peek().v == 'fn'):
+            out = []
+            while c.peek().v != '}':
+                r = parse_stmt(c)
+                if isinstance(r, list):
+                    rr = []
+                    for node in r:
+                        if (isinstance(node, tuple) and node and node[0] == 'extern'
+                                and node[1] is None and block_lib is not None):
+                            node = (node[0], block_lib) + node[2:]
+                        rr.append(node)
+                    out.extend(rr)
+                else:
+                    if (isinstance(r, tuple) and r and r[0] == 'extern'
+                            and r[1] is None and block_lib is not None):
+                        r = (r[0], block_lib) + r[2:]
+                    out.append(r)
+            c.want('}')
+            return out
+        if not (c.peek().k == 'STR' or (c.peek().k == 'KW' and c.peek().v == 'fn')):
             raise SyntaxError('extern wants fn at line %d' % eline(c))
-        return parse_extern(c)
+        node = parse_extern(c)
+        if (block_lib is not None and isinstance(node, tuple) and node and node[0] == 'extern'
+                and node[1] is None):
+            node = (node[0], block_lib) + node[2:]
+        return node
     if t.k == 'KW' and t.v == 'fn':
         return parse_fn(c)
     if t.k == 'KW' and t.v == 'unsafe':
@@ -258,9 +308,26 @@ def ann_text(toks):
     return ''.join(toks) if toks else None
 
 
-def parse_params(c):
+def parse_params(c, allow_varargs=False):
     params = []
+    varargs = None
     while c.peek().v != ')':
+        if allow_varargs and c.peek().v == '..':
+            c.step()
+            toks = []
+            depth = 0
+            while not (c.peek().v in (',', ')') and depth == 0):
+                x = c.peek()
+                if x.v == '[':
+                    depth += 1
+                if x.v == ']':
+                    depth -= 1
+                toks.append(x.v)
+                c.step()
+            varargs = ann_text(toks)
+            if c.peek().v == ',':
+                c.step()
+            continue
         pn = c.step().v
         mode = 'ref'
         if pn in ('move', 'mut', 'ref') and c.peek().v != ':':
@@ -300,6 +367,8 @@ def parse_params(c):
             seen_default = True
         elif seen_default:
             raise SyntaxError('param without default after default at line %d' % eline(c))
+    if allow_varargs:
+        return params, varargs
     return params
 
 
@@ -348,7 +417,7 @@ def parse_extern(c):
     name = c.step().v
     tparams = []
     c.want('(')
-    params = parse_params(c)
+    params, varargs = parse_params(c, allow_varargs=True)
     c.want(')')
     ret = None
     if c.peek().v == '->':
@@ -361,7 +430,7 @@ def parse_extern(c):
             ret = ann_text(toks)
     if c.peek().v == ';':
         c.step()
-    return ('extern', lib, name, params, ret)
+    return ('extern', lib, name, params, ret, varargs)
 
 def parse_arena(c):
     """`arena { body }` becomes an if-block that enters the arena, defers the

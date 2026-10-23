@@ -53,6 +53,6 @@ Rust wins on: ecosystem, soundness, tooling, community, CPU-bound throughput.
 
 ## 5. Roadmap
 
-- v0.1: C backend, arenas, ownership-lite, region analysis, CLI.
-- v0.2: FFI (`extern`/`mod`), LSP, region analysis, self-hosting.
+- v0.1: C backend, arenas, ownership-lite, region analysis, CLI, minimal FFI (`extern`).
+- v0.2: `mod`, LSP, self-hosting.
 - v1.0: ecosystem, registry, debugger, formal soundness.

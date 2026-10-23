@@ -776,8 +776,25 @@ def do_build(args):
     argv = spec.argv(cfile, out, target=target, static=static)
     if mem is not None:
         argv.append("-DBRAT_MEM_BYTES=%d" % mem)
-    r = subprocess.run(argv + ["-O2", "-I", HERE, "-lm"], capture_output=True,
-                       text=True, timeout=300, env=env)
+    try:
+        _ffi_libs = codegen.extern_libs(os.path.abspath(src))
+    except Exception:
+        _ffi_libs = []
+    _link_args = []
+    _seen_libs = set()
+    for _lib in _ffi_libs:
+        if not _lib or _lib in _seen_libs:
+            continue
+        _seen_libs.add(_lib)
+        if os.path.isabs(_lib) or os.path.exists(_lib):
+            _link_args.append(_lib)
+        else:
+            _link_args.append("-l:" + _lib)
+    if _ffi_libs and static and "--static" not in args:
+        static = False
+        argv = spec.argv(cfile, out, target=target, static=static)
+    r = subprocess.run(argv + ["-O2", "-I", HERE, "-lm"] + _link_args,
+                       capture_output=True, text=True, timeout=300, env=env)
     try:
         os.unlink(cfile)
     except OSError:
@@ -882,6 +899,12 @@ def do_dist(args):
             return syntax_error(src, _read_src(src), e)
         sys.stderr.write("brat dist: emit %s: %s\n" % (type(e).__name__, e))
         return 1
+    try:
+        _pre_libs = codegen.extern_libs(os.path.abspath(src))
+    except Exception:
+        _pre_libs = []
+    if _pre_libs and static and "--static" not in args:
+        static = False
     stem = os.path.splitext(os.path.basename(src))[0]
     artifacts = []
     failed = False
@@ -894,8 +917,22 @@ def do_dist(args):
             sys.stderr.write("brat dist: %s\n" % e)
             failed = True
             continue
-        r = subprocess.run(argv + ["-O2", "-I", HERE, "-lm"], capture_output=True,
-                           text=True, timeout=300, env=os.environ)
+        try:
+            _ffi_libs = codegen.extern_libs(os.path.abspath(src))
+        except Exception:
+            _ffi_libs = []
+        _link_args = []
+        _seen_libs = set()
+        for _lib in _ffi_libs:
+            if not _lib or _lib in _seen_libs:
+                continue
+            _seen_libs.add(_lib)
+            if os.path.isabs(_lib) or os.path.exists(_lib):
+                _link_args.append(_lib)
+            else:
+                _link_args.append("-l:" + _lib)
+        r = subprocess.run(argv + ["-O2", "-I", HERE, "-lm"] + _link_args,
+                           capture_output=True, text=True, timeout=300, env=os.environ)
         if r.returncode != 0:
             sys.stderr.write("brat dist: cc %s failed:\n%s\n"
                              % (t or "host", (r.stdout + r.stderr)[-2000:]))

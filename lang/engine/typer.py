@@ -41,6 +41,8 @@ def ann_type(ann):
         return "bool"
     if ann == "str":
         return "str"
+    if ann == "ptr":
+        return "int"
     if ann and ann.startswith("vec["):
         inner = ann[4:].rstrip("]")
         return ("vec", ann_type(inner) if inner else "dyn")
@@ -410,14 +412,23 @@ class FnTyper:
             if name in BRES:
                 return BRES[name]
             if name in self.sigs:
-                ptypes, rtype, ndef = self.sigs[name]
-                if len(e[2]) < len(ptypes) - ndef or len(e[2]) > len(ptypes):
-                    self.errs.note("`%s` wants %d args, got %d" % (name, len(ptypes), len(e[2])))
+                ptypes, rtype, ndef, varargs = self.sigs[name]
+                if varargs is None:
+                    if len(e[2]) < len(ptypes) - ndef or len(e[2]) > len(ptypes):
+                        self.errs.note("`%s` wants %d args, got %d" % (name, len(ptypes), len(e[2])))
+                else:
+                    if len(e[2]) < len(ptypes) - ndef:
+                        self.errs.note("`%s` wants at least %d args, got %d" % (name, len(ptypes) - ndef, len(e[2])))
                 for i, pt in enumerate(ptypes):
                     if i < len(e[2]):
                         gt = self.expr(e[2][i])
                         if not ok(pt, gt):
                             self.errs.note("arg %d of `%s`: want %s, got %s" % (i + 1, name, tname(pt), tname(gt)))
+                if varargs is not None:
+                    for i in range(len(ptypes), len(e[2])):
+                        gt = self.expr(e[2][i])
+                        if not ok(varargs, gt):
+                            self.errs.note("arg %d of `%s`: want %s, got %s" % (i + 1, name, tname(varargs), tname(gt)))
                 return rtype
             return "dyn"
         return "dyn"
@@ -638,9 +649,11 @@ def collect_sigs(prog, sigs):
         if node[0] == "extern":
             params = node[3]
             ret = node[4]
+            varargs = node[5] if len(node) > 5 else None
         else:
             params = node[2]
             ret = fn_ret(node)
+            varargs = None
         ptypes = []
         ndef = 0
         for p in params:
@@ -649,7 +662,7 @@ def collect_sigs(prog, sigs):
             if isinstance(p, tuple) and len(p) > 3 and p[3] is not None:
                 ndef += 1
         name = node[2] if node[0] == "extern" else node[1]
-        sigs[name] = (ptypes, ann_type(ret), ndef)
+        sigs[name] = (ptypes, ann_type(ret), ndef, ann_type(varargs) if varargs else None)
     return sigs
 
 

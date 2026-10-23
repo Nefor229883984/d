@@ -52,7 +52,7 @@ Sources: rustc-dev-guide borrow-check (5 properties), Vale linear-aliasing, Matt
 | Cargo weight, supply chain | `brat pkg` (URL + lock + sha256, vendor/) + `brat test`/`brat build`; LSP/registry roadmap | `cli.py`, `test_pkg.py` |
 | Cryptic errors | Words + lines + snippets (`file:line: error`); match exhaustiveness; static islands in typer | `borrow.py: report`, `parser.py`, `typer.py` |
 | Edition churn | No editions, compatibility by tests | this file |
-| No `mod`/`extern`/FFI | Roadmap, SPEC doesn't lie | SPEC §9 |
+| No `mod` (crates) | Roadmap; minimal FFI via `extern` (libc + shared libs, both backends) | SPEC §9 |
 | Privacy (`pub`, flat like C, checker catches) | `modapi/modapp/own_priv.brat` | `test_lang.py` |
 
 ## Speed

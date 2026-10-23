@@ -36,8 +36,9 @@ replacing Rust in prod.
   no `setjmp`), `spawn` via `CreateThread`/`pthread_create` with thread-local
   unwinding. 58/58 programs give byte-identical stdout and exit code (only `"ts"`
   field and CRLF normalized). This is a **correctness** claim, not speed.
-- **No `unsafe` at all.** Parser doesn't know the word. `-> ref` is SyntaxError
-  (no dangling returns). `extern`/`mod` not supported: no FFI, no crates, no
+- **`unsafe` blocks exist** but do not disable checks beyond scoping. `-> ref`
+  is SyntaxError (no dangling returns). Minimal FFI via `extern` (C functions,
+  `i32`/`i64`/`str`/`ptr`/`none`); `mod` and crates are not supported, no
   orphan rule.
 
 ## Against Rust
@@ -96,8 +97,9 @@ This is the most important section. No marketing.
   instantly. Go has GC, BRAT has arenas + refcount. Go has goroutines, BRAT has
   `spawn` (OS threads). Go's simplicity is the model; BRAT copies it (unified
   CLI, few types).
-- **Zig**: comptime, C-interop out of the box. BRAT has no FFI yet (roadmap).
-  Zig's simplicity is the model.
+- **Zig**: comptime, C-interop out of the box. BRAT has minimal FFI via
+  `extern` (libc and shared libs in both backends); no comptime. Zig's
+  simplicity is the model.
 - **OCaml**: fast GC, pattern matching. BRAT has match but no exhaustiveness
   proof (heuristic).
 - **Swift**: ARC, value types. BRAT has arenas + refcount.

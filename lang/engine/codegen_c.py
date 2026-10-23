@@ -303,6 +303,7 @@ class Emitter:
         self.vtab = {}
         self.traits = {}
         self.externs = {}
+        self.structs = {}
         self.codes = {}
         self.user_meths = set()
         self.clos = []
@@ -837,24 +838,28 @@ class Emitter:
     def collect_src(self, src, base):
         prog = _brat.parse_prog(_brat.Cur(_brat.lex(src)))
         for s in prog[1]:
-            if s[0] in ("fn", "impl", "trait", "enum", "pub", "extern"):
+            if s[0] in ("fn", "impl", "trait", "enum", "pub", "extern", "externstruct"):
                 self.collect_top(s, base)
         for s in prog[1]:
             if s[0] == "import":
                 self.collect_top(s, base)
-            elif s[0] not in ("fn", "impl", "trait", "enum", "pub", "extern"):
+            elif s[0] not in ("fn", "impl", "trait", "enum", "pub", "extern", "externstruct"):
                 self.top_exe.append(("stmt", s))
 
     def collect_top(self, s, base):
         k = s[0]
         if k == "pub":
             return self.collect_top(s[1], base)
+        if k == "externstruct":
+            self.structs[s[1]] = s[2]
+            return
         if k == "extern":
             lib = s[1]
             name = s[2]
             params = s[3]
             ret = s[4]
-            self.externs[name] = (params, ret, lib)
+            varargs = s[5] if len(s) > 5 else None
+            self.externs[name] = (params, ret, lib, varargs)
             return
         if k == "fn":
             if s[1] not in self.fns:
@@ -1303,17 +1308,35 @@ class Emitter:
             # local binding it reads the binding, as the interpreter does.
             return self.ex(("var", name))
         if name in self.externs:
-            params, ret, _lib = self.externs[name]
+            params, ret, _lib, varargs = self.externs[name]
             pa_all = []
             cargs = []
             for i, a in enumerate(args):
                 pa, sa = self.ex(a)
                 pa_all.extend(pa)
-                ann = params[i][2] if isinstance(params[i], tuple) and len(params[i]) > 2 else None
+                if i < len(params):
+                    ann = params[i][2] if isinstance(params[i], tuple) and len(params[i]) > 2 else None
+                else:
+                    ann = varargs
                 if ann == "str":
                     cargs.append("(%s).as.str" % sa)
                 elif ann == "ptr":
                     cargs.append("(void *)(%s).as.ival" % sa)
+                elif ann == "f64":
+                    cargs.append("(%s).as.fval" % sa)
+                elif ann in self.structs:
+                    _mems = []
+                    for _f, _ft in self.structs[ann]:
+                        _base = "(*map_get((%s).as.map, \"%s\"))" % (sa, _f)
+                        if _ft == "str":
+                            _mems.append(".%s = %s.as.str" % (_f, _base))
+                        elif _ft == "ptr":
+                            _mems.append(".%s = (void *)%s.as.ival" % (_f, _base))
+                        elif _ft == "f64":
+                            _mems.append(".%s = %s.as.fval" % (_f, _base))
+                        else:
+                            _mems.append(".%s = %s.as.ival" % (_f, _base))
+                    cargs.append("(%s){ %s }" % (ann, ", ".join(_mems)))
                 else:
                     cargs.append("(%s).as.ival" % sa)
             call = "%s(%s)" % (name, ", ".join(cargs))
@@ -1323,6 +1346,22 @@ class Emitter:
                 return (pa_all, "vstr(%s)" % call)
             if ret == "ptr":
                 return (pa_all, "vint((long long)(%s))" % call)
+            if ret in self.structs:
+                _fields = self.structs[ret]
+                _sets = []
+                for _f, _ft in _fields:
+                    if _ft == "str":
+                        _val = "vstr(_r.%s)" % _f
+                    elif _ft == "ptr":
+                        _val = "vint((long long)_r.%s)" % _f
+                    elif _ft == "f64":
+                        _val = "vfloat(_r.%s)" % _f
+                    else:
+                        _val = "vint(_r.%s)" % _f
+                    _sets.append("map_set(_v.as.map, \"%s\", %s);" % (_f, _val))
+                _expr = "({ %s _r = %s; Val _v = vstruct(vmap(\"%s\")); %s; _v; })" % (
+                    ret, call, ret, " ".join(_sets))
+                return (pa_all, _expr)
             return (pa_all + ["%s;" % call], "vnil()")
         if name in self.sym:
             return self.ex_vcall(name, args)
@@ -2472,8 +2511,28 @@ class Emitter:
         self.emit_prelude_headers()
         self.out.append("#include <stdlib.h>")
         self.out.append("#include <string.h>")
-        for _name, (_params, _ret, _lib) in self.externs.items():
+        for _sname, _sfields in self.structs.items():
+            _smembers = []
+            for _sf, _sty in _sfields:
+                if _sty == "i64":
+                    _smembers.append("long long %s;" % _sf)
+                elif _sty == "i32":
+                    _smembers.append("int %s;" % _sf)
+                elif _sty == "f64":
+                    _smembers.append("double %s;" % _sf)
+                elif _sty == "str":
+                    _smembers.append("const char *%s;" % _sf)
+                elif _sty == "ptr":
+                    _smembers.append("void *%s;" % _sf)
+                else:
+                    _smembers.append("long long %s;" % _sf)
+            self.out.append("typedef struct { %s } %s;" % (" ".join(_smembers), _sname))
+        self.out.append("")
+        for _name, (_params, _ret, _lib, *_) in self.externs.items():
+            _varargs = _[0] if _ else None
             if not _lib:
+                continue
+            if "libc" in _lib:
                 continue
             _ptypes = []
             for _p in _params:
@@ -2481,6 +2540,8 @@ class Emitter:
                 _ptypes.append(_ann)
             if _ret in (None, "none"):
                 _cret = "void"
+            elif _ret in self.structs:
+                _cret = _ret
             elif _ret == "i64":
                 _cret = "long long"
             elif _ret == "i32":
@@ -2493,7 +2554,9 @@ class Emitter:
                 _cret = "long long"
             _cparams = []
             for _a in _ptypes:
-                if _a == "i64":
+                if _a in self.structs:
+                    _cparams.append(_a)
+                elif _a == "i64":
                     _cparams.append("long long")
                 elif _a == "i32":
                     _cparams.append("int")
@@ -2503,6 +2566,8 @@ class Emitter:
                     _cparams.append("void *")
                 else:
                     _cparams.append("void *")
+            if _varargs:
+                _cparams.append("...")
             self.out.append("extern %s %s(%s);" % (_cret, _name, ", ".join(_cparams) if _cparams else "void"))
         self.out.append("")
         self.run_pipeline()
@@ -2580,3 +2645,12 @@ def emit_file(path, bundle=False):
             crt_text = f.read()
         src = src.replace('#include "crt.h"', crt_text, 1)
     return src
+
+
+def extern_libs(path):
+    """Sorted unique library names referenced by `extern` decls in `path`."""
+    em = Emitter()
+    em.mod_bases = [_o.path.dirname(_o.path.abspath(path))]
+    em.collect_file(path)
+    libs = {t[2] for t in em.externs.values() if t[2]}
+    return sorted(libs)

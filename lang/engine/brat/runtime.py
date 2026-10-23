@@ -939,12 +939,22 @@ def call(name, args, env, funcs):
         lib = ctypes.CDLL(libname) if libname else ctypes.CDLL(None)
         fn = getattr(lib, name)
         params, ret = info[1], info[2]
+        varargs = info[4] if len(info) > 4 else None
         # build ctypes argtypes
         def to_c(ty, v):
+            if ty in _STRUCTS:
+                cls = _struct_class(ty)
+                inst = cls()
+                for f, ft in _STRUCTS[ty]:
+                    fv = v.get(f) if isinstance(v, dict) else v
+                    setattr(inst, f, to_c(ft, fv))
+                return inst
             if ty == 'i64':
                 return ctypes.c_longlong(v)
             if ty == 'i32':
                 return ctypes.c_int(v)
+            if ty == 'f64':
+                return ctypes.c_double(v)
             if ty == 'str':
                 return ctypes.c_char_p(v.encode('utf-8') if isinstance(v, str) else v)
             if ty == 'ptr':
@@ -954,16 +964,56 @@ def call(name, args, env, funcs):
         for p, v in zip(params, vals):
             ann = p[2] if isinstance(p, tuple) and len(p) > 2 else None
             cargs.append(to_c(ann, v))
+        for v in vals[len(params):]:
+            cargs.append(to_c(varargs, v))
         fn.argtypes = None
+        if varargs is None:
+            atypes = []
+            for p in params:
+                ann = p[2] if isinstance(p, tuple) and len(p) > 2 else None
+                atypes.append(_struct_ctype(ann) if ann in _STRUCTS or ann in ('i64','i32','f64','str','ptr') else None)
+            # map basic
+            fixed_types = []
+            for p in params:
+                ann = p[2] if isinstance(p, tuple) and len(p) > 2 else None
+                if ann == 'i64':
+                    fixed_types.append(ctypes.c_longlong)
+                elif ann == 'i32':
+                    fixed_types.append(ctypes.c_int)
+                elif ann == 'f64':
+                    fixed_types.append(ctypes.c_double)
+                elif ann == 'str':
+                    fixed_types.append(ctypes.c_char_p)
+                elif ann == 'ptr':
+                    fixed_types.append(ctypes.c_void_p)
+                elif ann in _STRUCTS:
+                    fixed_types.append(_struct_class(ann))
+                else:
+                    fixed_types.append(None)
+            if all(t is not None for t in fixed_types):
+                fn.argtypes = fixed_types
         if ret in ('i64', 'i32'):
             fn.restype = ctypes.c_longlong
         elif ret == 'str':
             fn.restype = ctypes.c_char_p
         elif ret == 'ptr':
             fn.restype = ctypes.c_void_p
+        elif ret in _STRUCTS:
+            fn.restype = _struct_class(ret)
         else:
             fn.restype = None
         r = fn(*cargs)
+        if ret in _STRUCTS:
+            out = {'$type': ret}
+            for f, ft in _STRUCTS[ret]:
+                val = getattr(r, f)
+                if ft == 'str':
+                    out[f] = val.decode('utf-8') if isinstance(val, bytes) else val
+                elif ft == 'ptr':
+                    out[f] = val.value if hasattr(val, 'value') else (val or 0)
+                else:
+                    out[f] = val
+            return out
         if ret in ('i64', 'i32'):
             return r
         if ret == 'str':
@@ -1493,6 +1543,37 @@ def join_all():
 
 _TRAITS = {}
 _VARIANTS = {}
+_STRUCTS = {}
+_STRUCT_CACHE = {}
+
+
+def _struct_ctype(ty):
+    import ctypes
+    if ty == 'i64':
+        return ctypes.c_longlong
+    if ty == 'i32':
+        return ctypes.c_int
+    if ty == 'f64':
+        return ctypes.c_double
+    if ty == 'str':
+        return ctypes.c_char_p
+    if ty == 'ptr':
+        return ctypes.c_void_p
+    if ty in _STRUCTS:
+        return _struct_class(ty)
+    return ctypes.c_longlong
+
+
+def _struct_class(name):
+    if name in _STRUCT_CACHE:
+        return _STRUCT_CACHE[name]
+    import ctypes
+    fields = _STRUCTS[name]
+    cls = type(name, (ctypes.Structure,), {
+        '_fields_': [(f, _struct_ctype(t)) for f, t in fields],
+    })
+    _STRUCT_CACHE[name] = cls
+    return cls
 
 
 def hoist(s, funcs):
@@ -1503,7 +1584,9 @@ def hoist(s, funcs):
             funcs[s[1]] = (s[2], s[3])
     elif s[0] == 'extern':
         if s[2] not in funcs:
-            funcs[s[2]] = ('extern', s[3], s[4], s[1])
+            funcs[s[2]] = ('extern', s[3], s[4], s[1], s[5] if len(s) > 5 else None)
+    elif s[0] == 'externstruct':
+        _STRUCTS[s[1]] = s[2]
     elif s[0] == 'enum':
         for vname, fields in s[2]:
             tag = 'none' if vname == 'None' and not fields else vname.lower()
@@ -1591,7 +1674,7 @@ def load_mod(name, env, funcs):
     for s in prog[1]:
         hoist(s, funcs)
     for s in prog[1]:
-        if s[0] not in ('fn', 'impl', 'trait', 'enum', 'pub', 'extern'):
+        if s[0] not in ('fn', 'impl', 'trait', 'enum', 'pub', 'extern', 'externstruct'):
             run_stmt(s, env, funcs)
 
 
@@ -1745,6 +1828,8 @@ def _run_stmt(s, env, funcs):
         raise LoopCont()
     elif k == 'import':
         load_mod(s[1], env, funcs)
+    elif k == 'externstruct':
+        pass
     elif k == 'impl':
         hoist(s, funcs)
     elif k == 'enum':
@@ -1768,7 +1853,7 @@ def run(src, base='.', argv=None):
     for s in prog[1]:
         hoist(s, funcs)
     for s in prog[1]:
-        if s[0] not in ('fn', 'impl', 'trait', 'enum', 'pub', 'extern'):
+        if s[0] not in ('fn', 'impl', 'trait', 'enum', 'pub', 'extern', 'externstruct'):
             run_stmt(s, env, funcs)
     out = call('main', [], env, funcs) if 'main' in funcs else 0
     join_all()
