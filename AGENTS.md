@@ -1,111 +1,79 @@
 # AGENTS.md — BRAT
 
-## Проект
+## Project
 
-BRAT — небольшой системный язык с ownership-проверкой, компилируется в C.
-Два бэкенда: интерпретатор (Python) и нативный C (`codegen_c.py` + `crt.h`).
-Тесты сравнивают их вывод и код выхода побайтно.
+BRAT is a small systems language with ownership checking, compiled to C.
+Two backends: a Python interpreter and native C (`codegen_c.py` + `crt.h`).
+Tests compare their output and exit codes byte-for-byte.
 
-- Корень проекта: `lang/`
-- Движок: `lang/engine/` (парсер, чекер, интерпретатор, C-кодогенератор, рантайм)
-- Примеры: `lang/examples/`
-- Спецификация: `lang/spec/SPEC.md`
-- Тесты: `lang/tests/test_*.py`
-- Документация: `docs/`
+- Project root: `lang/`
+- Engine: `lang/engine/` (parser, checker, interpreter, C codegen, runtime)
+- Examples: `lang/examples/`
+- Spec: `lang/spec/SPEC.md`
+- Tests: `lang/tests/test_*.py`
+- Docs: `docs/`
 
-## Команды
+## Commands
 
 ```sh
-# Запуск интерпретатором
 python3 lang/engine/cli.py run lang/examples/hello.brat
-
-# Проверка без запуска
 python3 lang/engine/cli.py check lang/examples/own_bad.brat
-
-# Сборка нативного бинарника
 python3 lang/engine/cli.py build lang/examples/hello.brat -o hello
-
-# Тесты (один файл)
 python3 lang/tests/test_lang.py
 python3 lang/tests/test_native.py
 python3 lang/tests/test_diff.py
-
-# Полный набор — каждый test_*.py отдельно, ~3 минуты на одном ядре
 ```
 
-## Главные правила
+## Core rules
 
-1. **Честность выше процентов.** Не утверждай soundness, которого нет. Не приукрашивай.
-   Известные дыры перечислены в `docs/guide/ownership.md`. Если трогаешь ownership — прочитай его.
-2. **Правка без прогона не принимается.** Любое изменение в `lang/engine/` прогоняется
-   хотя бы `test_lang.py` + `test_native.py` + `test_diff.py`. Изменение в кодогене — `test_native.py`.
-3. **Не пиши слоп.** Не добавляй абстракции «на будущее», не создавай файлы без нужды,
-   не рефактори без запроса. Минимальный дифф, решающий задачу.
-4. **Два бэкенда должны совпадать.** Любое поведение, которое работает в интерпретаторе,
-   должно работать в нативе и наоборот. `test_diff.py` — постоянный дифференциальный сьют.
-5. **Не ломай `crt.h` молча.** Рантайм — ~130 функций на tagged union `Val`. Изменение сигнатуры
-   рантайма ломает `codegen_c.py`. Меняй обе стороны.
-6. **Не ври про LLVM.** `codegen_llvm.py` — proof-of-concept на 4 функциях, не бэкенд.
-   Тесты пропускаются без `llvmlite`. Не называй его бэкендом.
-7. **Архивы и сгенерированное — не коммитить.** `*.c`, `*.o`, `*.exe`, `*.zip`, `/tmp`, `/out`, `/build`.
-   В репозитории только исходник языка.
+1. Honesty over percentages. No unsoundness claims. Known holes are listed in `docs/guide/ownership.md`.
+2. No change without a run. Any change in `lang/engine/` runs at least `test_lang.py` + `test_native.py` + `test_diff.py`.
+3. No slop. No speculative abstractions, no new files without need, no refactoring without request. Smallest diff that solves the task.
+4. Two backends must agree. Anything that works in the interpreter must work in native and vice versa.
+5. Do not change `crt.h` silently. ~130 functions on tagged union `Val`. Change both sides.
+6. Do not lie about LLVM. `codegen_llvm.py` is a 4-function proof-of-concept, not a backend.
+7. No generated files in the repo: `*.c`, `*.o`, `*.exe`, `*.zip`, `/tmp`, `/out`, `/build`.
 
-## Архитектура (кратко)
+## Architecture
 
-- `parser.py` — парсер (BRAT → AST)
-- `typer.py` — статические проверки типов
-- `borrow.py` — ownership-чекер (линейные алиасы, move/borrow)
-- `interp.py` / `runtime.py` — интерпретатор
-- `codegen_c.py` — C-кодогенератор
-- `crt.h` — C-рантайм
+- `parser.py` — parser (BRAT -> AST)
+- `typer.py` — static type checks
+- `borrow.py` — ownership checker
+- `interp.py` / `runtime.py` — interpreter
+- `codegen_c.py` — C codegen
+- `crt.h` — C runtime
 - `cli.py` — CLI: run/check/build/pkg/test
 
-## Известные ограничения (честно)
+## Known limitations
 
-- `move` не инвалидирует значение в рантайме; проверка только статическая и внутри функции.
-- Каналы, C-интероп, `scope` — не реализованы (см. `docs/design/ARENA.md`).
-- LLVM-бэкенд — proof-of-concept.
-- Экосистема: `brat pkg` умеет только URL + sha256 + vendor. Нет реестра.
+- `move` has no runtime effect; check is static and intra-function.
+- Channels, C-interop, `scope` not implemented (see `docs/design/ARENA.md`).
+- LLVM backend is proof-of-concept.
+- Ecosystem: `brat pkg` supports URL + sha256 + vendor only. No registry.
 
-## Скилы для моментов
+## Skills
 
-### `ponytail` — заставляет самое простое решение, которое работает
-Вызывай, когда собираешься создать новый файл для того, что можно положить в существующий,
-добавить зависимость, создать класс для одноразовой вещи, рефакторить без запроса.
+- `ponytail` — simplest working solution.
+- `grilling` — stress-test before a feature.
+- `tdd` — red-green-refactor.
+- `diagnosing-bugs` — reproduce first.
+- `verification-before-completion` — evidence before claims.
+- `code-review` — second eyes.
+- `improve-codebase-architecture` — when design is bad.
 
-### `grilling` — допрашивает пользователя перед постройкой
-Вызывай перед новой фичей, эндпоинтом, значимым изменением бизнес-логики.
-Не вызывай для тривиальных багфиксов и документации.
+## Red lines (do not touch without explicit request)
 
-### `tdd` — тест-драйвен
-Пиши тест, который падает, затем минимальный код. Для BRAT: любой новый синтаксис/семантика
-должна иметь тест в `test_lang.py` (интерпретатор) и `test_native.py` (натив) или `test_diff.py`.
+- `lang/engine/crt.h` — runtime, ~130 functions.
+- `lang/spec/SPEC.md` — spec.
+- `docs/project/LEDGER.md` — status ledger.
+- `test_*.py` — do not weaken tests.
 
-### `diagnosing-bugs` — когда что-то сломалось и причина неизвестна
-Сначала петля, которая краснеет на *этом* баге, потом гипотеза. Не угадывай.
+## Links
 
-### `verification-before-completion` — перед «готово»
-Запусти команды, прочитай вывод. Не пересказывай отчёт субагента как факт.
-
-### `code-review` — чужие глаза на работу
-После завершения фичи.
-
-### `improve-codebase-architecture` — когда дизайн плохой
-Когда третий фикс подряд не работает — это не гипотеза, это плохой дизайн.
-
-## Красные линии (не трогать без явного запроса)
-
-- `lang/engine/crt.h` — рантайм, ~130 функций. Изменение требует тестов.
-- `lang/spec/SPEC.md` — спецификация. Менять только по решению.
-- `docs/project/LEDGER.md` — построчный статус. Обновлять при реальном изменении статуса.
-- Тесты `test_*.py` — не ослаблять, чтобы «зеленело». Чини код.
-
-## Ссылки
-
-- `docs/README.md` — карта чтения документации.
-- `docs/guide/ownership.md` — модель владения, известные дыры.
-- `docs/guide/why.md` — зачем BRAT, где проигрывает Rust.
-- `docs/project/LEDGER.md` — статус «болей Rust».
-- `docs/design/ARENA.md` — арены.
-- `bench/README.md` — бенчмарки (чего меряли никогда).
-- `CONTRIBUTING.md` — правила репозитория.
+- `docs/README.md` — docs map.
+- `docs/guide/ownership.md` — ownership model, known holes.
+- `docs/guide/why.md` — why BRAT, where it loses to Rust.
+- `docs/project/LEDGER.md` — Rust pain points vs BRAT.
+- `docs/design/ARENA.md` — arenas.
+- `bench/README.md` — benchmarks.
+- `CONTRIBUTING.md` — repo rules.
