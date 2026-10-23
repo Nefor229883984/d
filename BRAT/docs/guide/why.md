@@ -1,261 +1,110 @@
-Зачем BRAT
+# Why BRAT
 
-Коротко
+## Short answer
 
-Rust решает проблему владения ценой аннотаций и правил, которые надо помнить.
-BRAT решает ту же проблему другим способом: аннотаций нет вообще, а
-проверка — неполная и честно признанная неполной. Ошибки — значения, а не
-паники. Телеметрия — синтаксис, а не зависимость.
+Rust solves ownership at the cost of annotations and rules you must remember.
+BRAT solves the same problem differently: no annotations at all, and checking
+that is incomplete but honestly admitted. Errors are values, not panics.
+Telemetry is syntax, not a dependency.
 
-Это v0.1. Ниже написано, где этот обмен выигрывает, и — в отдельном разделе —
-где он проигрывает Rust. Раздел про проигрыш читайте первым, если думаете о
-замене Rust в проде.
+This is v0.1. Below: where this trade wins, and — in a separate section —
+where it loses to Rust. Read the losing section first if you think about
+replacing Rust in prod.
 
-Что BRAT такое сегодня, без приукрашивания
+## What BRAT is today, without marketing
 
-**Ноль аннотаций лайфтаймов.** Ни `'a`, ни elision-правил, ни HRTB, ни
-`PhantomData`. В `lang/examples/*.brat` нет ни одного лайфтайма — это
-проверяется грепом. Вместо лайфтаймов чекер считает **места** (paths) и
-строит линейную модель: `x`, `x.f`, `x.f.g`, `x[i]` (индекс — `x.*`).
+- **Zero lifetime annotations.** No `'a`, no elision rules, no HRTB, no
+  `PhantomData`. `lang/examples/*.brat` has zero lifetimes (checked by grep).
+  Instead the checker counts **paths**: `x`, `x.f`, `x.f.g`, `x[i]` (`x.*`).
+- **Intra-function linear alias checker.** Closer to Vale linear-aliasing than
+  rustc: single ownership + moves, no borrow-checker syntax. One function at a
+  time. Guarantees are intra-function; holes are listed with repros in
+  `docs/guide/ownership.md`.
+- **Errors as values.** `Ok`/`Err`/`Some`/`None` are runtime tags. `?` unwraps
+  `Ok`/`Some` and propagates `Err`. `or` defaults only for `None` (not `Err`:
+  `Err("x") or 5` prints `('err', 'x')`). `unwrap` propagates or errors.
+  `try/catch` catches `Err` and runtime errors (`/0`, out of bounds, missing
+  key) in **both** backends — error-channel values, not `exit`. Unhandled `Err`
+  at top: `unhandled: ('err', 'bad')`, exit 1.
+- **Telemetry as syntax.** `log.info`, `log.warn`, `log.error`, `trace.span` are
+  AST calls, not SDK. `{x}` interpolation. JSON on stdout:
+  `{"ts":..., "lvl":"INFO", "msg":"..."}` for logs, `{"ts":..., "span":[...]}`
+  for traces.
+- **Working C backend.** `codegen_c.py` + `crt.h`: ~130 runtime functions,
+  tagged `Val` union (`V_NIL`/`V_BOOL`/`V_INT`/`V_FLOAT`/`V_STR`/`V_VEC`/
+  `V_STRUCT`/`V_TAG`), error unwinding as values (TLS `verr_pending`/`vuwind`,
+  no `setjmp`), `spawn` via `CreateThread`/`pthread_create` with thread-local
+  unwinding. 58/58 programs give byte-identical stdout and exit code (only `"ts"`
+  field and CRLF normalized). This is a **correctness** claim, not speed.
+- **No `unsafe` at all.** Parser doesn't know the word. `-> ref` is SyntaxError
+  (no dangling returns). `extern`/`mod` not supported: no FFI, no crates, no
+  orphan rule.
 
-**Внутрифункциональный чекер линейных алиасов.** Модель ближе к Vale
-linear-aliasing, чем к rustc: single ownership + moves, без
-borrow-checker-синтаксиса. Анализ идёт по одной функции за раз. Что это
-значит на практике — читайте [docs/guide/ownership.md](ownership.md): гарантии
-внутрифункциональные, дыры перечислены с репро.
+## Against Rust
 
-**Ошибки как значения.** `Ok`/`Err`/`Some`/`None` — рантайм-теги, `?`
-разворачивает `Ok`/`Some` и пробрасывает `Err`, `or` даёт дефолт только для
-`None` (для `Err` — нет, это проверено: `Err("x") or 5` печатает
-`('err', 'x')`), `unwrap` требует значения или пробрасывает ошибку,
-`try/catch` ловит и `Err`, и рантайм-ошибки (`/0`, выход за границу, нет
-ключа) — в **обоих** бэкендах это значения канала ошибок, не `exit`.
-Непойманный `Err` наверху: `unhandled: ('err', 'bad')`, exit 1.
+### Where BRAT wins
 
-**Телеметрия как синтаксис.** `log.info`, `log.warn`, `log.error`,
-`trace.span` — обычные вызовы,
-разбираемые в AST, а не SDK. Интерполяция `{x}` в строке. Вывод — JSON на
-stdout: `{"ts": ..., "lvl": "INFO", "msg": "..."}` для логов,
-`{"ts": ..., "span": [...]}` для трейсов.
+- **Zero annotations.** Rust's `'a`, elision, HRTB force `fn longest<'a>(...)`.
+  BRAT has none. Inference is a language rule, not the programmer's job.
+- **Errors need no Result hierarchy.** Rust makes you pick `anyhow`/`thiserror`/
+  `Box<dyn Error>`. BRAT has one `Ok`/`Err`, `?` works everywhere, `unwrap` is
+  not a panic, `/0` is always an error (not wrap-in-release + panic-in-debug).
+- **Telemetry without deps.** Rust needs `tracing` + `opentelemetry` + macros.
+  Here `log.info("...")` and `trace.span` are AST-visible calls.
+- **No async colors.** `spawn { }` + `join_all()`, OS threads in both backends,
+  no `async`/`await`/`Future`/`Pin`/`Send`/`Sync`. Caveat: `spawn` doesn't
+  protect against races.
+- **No integer zoo.** `i64`, `f64`, `bool`, `str`. No `u8..usize`, no
+  `NonZeroU32`, no `wrapping_add`. Integer division is always integer
+  (floor, Python-style).
 
-**Работающий C-бэкенд.** `codegen_c.py` + `crt.h`. `crt.h` — около 130
-функций рантайма, тегированный union `Val` (`V_NIL`/`V_BOOL`/`V_INT`/
-`V_FLOAT`/`V_STR`/`V_VEC`/`V_STRUCT`/`V_TAG`), раскрутка ошибок как значений
-(TLS `verr_pending`/`vuwind`, без `setjmp`), `spawn` через
-`CreateThread`/`pthread_create` с thread-local раскруткой.
-Проверка: 58 программ из 58 дают побайтово тот же stdout и тот же код
-возврата, что интерпретатор (нормализуются только поле `"ts"` и CRLF).
-Это заявление о **корректности**, не о скорости.
+### Where BRAT loses to Rust
 
-**`unsafe` нет вообще.** Парсер не знает этого слова. `-> ref` парсер
-отвергает как SyntaxError — висячие ссылки через возврат невозможны
-синтаксически. `extern`/`mod` парсер не поддерживает: нет FFI, нет крейтов,
-нет orphan rule.
+This is the most important section. No marketing.
 
-Против Rust
+- **Ecosystem size.** Main loss, incomparable. Rust has crates.io (hundreds of
+  thousands), `cargo` for deps, publish, versions, vendoring, audit. BRAT has
+  `brat pkg`: download a file by URL, put it in `vendor/`, write sha256 to
+  `brat.lock`. No registry, search, versions, transitive deps, feature flags,
+  LSP, IDE support beyond one `tmLanguage.json`, no CI integration. For code
+  with dozens of deps, BRAT is unusable today. Not "when they add it" — the
+  infrastructure doesn't exist.
+- **Formal soundness history.** Rust has validated core (`rustc` + MIR + NLL),
+  Miri, Creak, years of CVEs fixed in the compiler itself. BRAT has none: checker
+  is intra-function and incomplete. Its own suite is green on 87 cases, but that's
+  known cases, not a soundness proof. Nobody proved BRAT has no use-after-free.
+  Known holes are listed and reproducible — see `docs/guide/ownership.md`.
+- **CPU-bound throughput.** Interpreter is tree-walking Python with GIL. C
+  backend removes interpreter overhead but is still C over a tagged union, not
+  compiled machine code with an optimizer. Exception: mono fast-path — functions
+  with all `i64` (or all `f64`, or `i64`/`vec[i64]`) params and provably numeric
+  bodies compile to raw C `long`/`double` without `Val` boxing. No benchmarks
+  for that path — see `bench/README.md`. Rust wins on number-crunching; BRAT
+  doesn't contest it.
+- **Years of production hardening.** Rust is a decade in production. Every
+  `unsafe` CVE, every compiler segfault, every compiler bug is a lesson. BRAT has
+  none of that history.
+- **Tooling.** Rust has rustfmt, clippy, rust-analyzer, miri, cargo. BRAT has
+  `brat fmt` (basic), `brat check`, no clippy-equivalent, no LSP, no debugger,
+  no profiler integration. `brat fmt` reformats; nothing else.
+- **Community and hiring.** Rust has a community, conferences, jobs. BRAT has
+  one person and a repo.
 
-Где BRAT выигрывает
+## Against Go / Zig / OCaml / Swift
 
-**Ноль аннотаций.** В Rust `'a`, elision-правила и HRTB — это то, что
-заставляет новичка писать `fn longest<'a>(x: &'a str, y: &'a str) -> &'a str`,
-а ветерана — считать, какая аннотация всё ломает. В BRAT этой строки нет.
-Вывод — правило языка, а не задача программиста.
+- **Go**: BRAT is slower to compile? No — Go compiles fast, BRAT interprets
+  instantly. Go has GC, BRAT has arenas + refcount. Go has goroutines, BRAT has
+  `spawn` (OS threads). Go's simplicity is the model; BRAT copies it (unified
+  CLI, few types).
+- **Zig**: comptime, C-interop out of the box. BRAT has no FFI yet (roadmap).
+  Zig's simplicity is the model.
+- **OCaml**: fast GC, pattern matching. BRAT has match but no exhaustiveness
+  proof (heuristic).
+- **Swift**: ARC, value types. BRAT has arenas + refcount.
 
-**Ошибки не требуют Result-иерархии.** Rust заставляет выбирать между
-`anyhow`, `thiserror`, `Box<dyn Error>` и собственным `enum`. В BRAT один
-`Ok`/`Err`, и `?` работает везде, а не только в функциях с `Result` в
-сигнатуре. `unwrap` — не паника, а проброс или явная ошибка. `/0` — ошибка
-всегда, а не wrap-в-релизе и паника в дебаге.
+## Honest summary
 
-**Телеметрия без зависимости.** В Rust нужны `tracing` и `opentelemetry` с
-макросами. Здесь `log.info("...")` и `trace.span` — вызовы, которые видно в AST
-и которые диспетчеризуются рантаймом.
-
-**Нет async-цветов.** `spawn { }` + `join_all()`, потоки ОС в обоих
-бэкендах, без `async`/`await`/`Future`/`Pin`/`Send`/`Sync`. Минус — см.
-ниже про конкуренцию: `spawn` **не защищает от гонок**.
-
-**Нет целочисленного зоопарка.** `i64`, `f64`, `bool`, `str`. Нет
-`u8..usize`, нет `NonZeroU32`, нет `wrapping_add`. Целочисленное деление
-всегда целочисленное (floor, как в Python), поэтому `/` не меняет тип по
-входу.
-
-Где BRAT проигрывает Rust
-
-Это самый важный раздел файла. Здесь нет marketing.
-
-**Размер экосистемы.** Это главный проигрыш и он несопоставим с остальными.
-У Rust — crates.io с сотнями тысяч пакетов, `cargo` как единый вход для
-зависимостей, публикации, версий, вендоринга, аудита. У BRAT есть
-`brat pkg`, который умеет ровно три вещи: скачать файл по URL, положить его в
-`vendor/`, записать sha256 в `brat.lock`. Нет ни реестра, ни поиска, ни
-версий, ни транзитивных зависимостей, ни feature-флагов, ни lock-файла с
-графом. Ни LSP, ни IDE-поддержки, кроме подсветки синтаксиса в одном
-`tmLanguage.json`. Ни CI-интеграции. Для кода, который живёт в репозитории
-с десятками зависимостей, BRAT сейчас непригоден. Это не вопрос «когда
-допишут» — это инфраструктура, которой нет.
-
-**Формальная история soundness.** У Rust есть валидированное ядро
-(`rustc` + MIR + NLL), формализация и живая работа Miri и Creak, годы
-подтверждённых CVE и фиксов в самом компиляторе. У BRAT нет ничего
-подобного: чекер внутрифункциональный и неполный, его собственная батарея
-зелёная на всех 87 кейсах, но это проверка известных случаев, а не
-доказательство звуковости. Никто не доказал, что BRAT не имеет
-use-after-free. Утверждать обратное нельзя. Единственное, что можно
-скать: известные дыры перечислены и воспроизводимы — см.
-[docs/guide/ownership.md](ownership.md).
-
-**Пропускная способность на CPU-bound.** Интерпретатор BRAT — дерево-обход
-на Python с GIL.  C-бэкенд снимает накладные расходы
-интерпретатора, но это всё равно C с динамическим рантаймом поверх
-tagged union, а не скомпилированный машинный код с оптимизатором.
-Единственное исключение — mono fast-path: функции, у которых все параметры
-помечены `i64` (или все `f64`, или смесь `i64`/`vec[i64]`) и тело доказуемо
-числовое, компилируются в сырой C `long`/`double` без боксов `Val`.
-**Числовых замеров этого пути нет вообще** — см.
-[bench/README.md](../../bench/README.md). Rust на числодробилке выигрывает с
-запасом, и BRAT не пытается оспорить это.
-
-**Годы продакшн-хардненинга.** Rust в продакшене десятилетие. Каждая
-уязвимость в `unsafe`-коде, каждый segfault в компиляторе, каждый баг в
-borrow checker — это уже исправленная ошибка с регрессионным тестом. BRAT
-v0.1 не имеет ни одного года в проде, ни одного независимого аудита, ни
-одного CVE. Отсутствие `unsafe` уменьшает поверхность атаки, но не
-компенсирует отсутствие практики.
-
-**Конкуренция небезопасна.** Это надо сказать прямо. `spawn` создаёт
-настоящие потоки ОС в обоих бэкендах, но **не защищает от гонок данных**.
-Кадр копируется, запись в мутабельный захват теряется; чекер это отвергает
-(`assign to captured ... in spawn`), но общее мутабельное состояние между
-потоками — ответственность пользователя. Rust даёт `Send`/`Sync` и
-запрещает передачу не-`Send` типа; здесь такой проверки нет. Для
-конкурентного кода на продакшене это неприемлемо без внешней дисциплины.
-
-**Нет трейт-объектов.** `dyn Trait` в v0.2. То есть нет динамической
-диспетчеризации по интерфейсу — а это основа плагинных архитектур,
- mocks, visitor-паттернов. Трейты есть, статическая диспетчеризация есть,
- объектов нет.
-
-**Нет макросов.** `macro_rules!` и процедурные макросы в Rust закрывают
-задачи, которые в BRAT приходится решать методами, дженериками и UFCS.
-BRAT утверждает, что это покрывает 80% случаев. Это утверждение из
-`docs/project/LEDGER.md`, не измерение.
-
-**Нет GAT и ассоциированных типов.** Roadmap.
-
-**Нет полных дженериков.** Дженерики BRAT — стирание, как в Java: тело
-функции общее для всех типов. Нет мономоромизации, нет specializes, нет
-конкретных impl для конкретных типов. Разница в скорости и в диагностике
-ошибок.
-
-**Нет полных лайфтаймов.** Это конструктивное решение, а не баг, но у него
-есть цена: нет регионов, нет HRTB, нет `Pin`, нет self-referential
-структур. Rust умеет `Pin<Box<Self>>` через unsafe-конструкции; BRAT не
-умеет вообще.
-
-**Ошибки — значения, а не типы.** `Err` не несёт тип ошибки. Канал ошибок
-нетипизирован до v0.2: поймать конкретный класс ошибки нельзя, только
-строковое сообщение. В Rust `enum io::Error` с вариантами даёт exhaustive
-match по ошибкам. Здесь `match` на `Err` увидит одну строку.
-
-**Нет FFI.** `extern "C"` не поддерживается. Любая интеграция с существующей
-C-библиотекой — через ручное написание обвязки в C и запуск как отдельного
-процесса. Для системного программирования это закрывает дверь.
-
-**Нет макросов, нет conditional compilation, нет `build.rs`-эквивалента.**
-`brat build` компилирует один файл.
-
-**Приватность слабее.** `pub fn`/`pub enum` видны через `import`, без `pub`
-— нет. Пространство имён плоское, как в C. Чекер ловит нарушения
-приватности между модулями, но сама модель — «приватность по умолчанию, всё
-регистрируется в рантайме». Сравните с `mod`/`crate`/`pub(crate)` в Rust.
-
-**Нет стабильности языка.** Rust имеет editions и deprecation policy. BRAT
-их отрицает идеологически: «совместимость держится тестами». Это честная
-позиция, но она не даёт ничего прикладному коду, который живёт дольше
-двух лет.
-
-Против Go
-
-**BRAT лучше:** владение по умолчанию — в Go GC и никакого контроля
-владения, а `data race` ловится только `-race` и только в рантайме, в
-продакшене без флага. В BRAT use-after-move и double-mut — ошибки компиляции.
-Иммутабельность по умолчанию: в Go всё `map` и срезы — ссылки, переменная
-может быть переприсвоена из другого места без предупреждения.
-
-**Go лучше:** зрелость на порядок. Скорость компиляции, размер бинаря,
-инструменты, `go vet`, профилировщики, `go test`, race-детектор в CI по
-умолчанию, 15 лет в продакшене, сотни тысяч модулей. В BRAT этого нет.
-Единственное исключение: `go build` медленнее, чем `brat.py` (интерпретатор
-стартует мгновенно), и `brat build` — это C плюс zig cc, то есть
-zig-компилятор нужен отдельным шагом.
-
-**Семантика `let` в BRAT — Rust-семантика.** `let v = [1,2]; v.push(3)` —
-ошибка: нужен `let mut v`. Мутация через builtin-метод (`push`, `sort`,
-`set`, `del`, `ins`, `sort_by`) — это запись, и проверка требует mut-место.
-Раньше проверка молча пропускала такие вызовы, и корпус жил в Go-семантике;
-решение принято в пользу Rust, корпус переведён. В Go — наоборот: имя —
-алиас, мутация разрешена.
-
-Против Zig
-
-**BRAT лучше:** проверки владения статические и обязательные; в Zig
-владение вообще не проверяется на уровне типов — есть `@TypeOf` и
-`noalias`, а «move» и «aliasing» это соглашения, которые компилятор не
-проверяет. Ошибки — значения, не `error union` (который, впрочем, тоже
-хорош, но это отдельная система). Телеметрия как синтаксис.
-
-**Zig лучше:** Zig — настоящий системный язык. `comptime`, генерация кода,
-`@import`, C-совместимость без FFI-обвязки, отсутствие скрытого
-аллоцирования, предсказуемость, self-hosted компилятор на 60k строк,
-встроенный форматтер и тест-раннер. C-бэкенд BRAT — это трансляция в C,
-то есть выигрыш даёт только рантайм, а не оптимизатор.
-
-**`test_codegen_c.py` ничего не компилирует.** Он ищет подстроки и считает
-скобки. Фактическая компиляция проверяется только в `test_native.py`, где
-58 программ собираются через `zig cc -O2`. Это важно: «C-бэкенд есть»
-означает «58 программ компилируются и совпадают с интерпретатором», а не
-«каждая строка нашего эмиттера проверена».
-
-Против OCaml
-
-**BRAT лучше:** в OCaml мутабельность не отслеживается на уровне типов вообще
-(никакой линейной типизации нет, если не считать линейных типов в
-алгебраических структурах данных, что другой инструмент). `Obj.magic` и
-`Bytes.unsafe_to_string` — это дыры без счётчика. Нет `move`, нет проверки
-aliasing. BRAT — язык с проверками, а не с рекомендациями.
-
-**OCaml лучше:** настоящая алгебраическая система типов: `Option`,
-`Result`, `variant`, GADT, existential types, first-class модули, `Map`/
-`Set` с компаратором, pattern matching с exhaustiveness на типах. Оценка
-выражений. Эффект-система в разработке. Это язык, на котором можно написать
-проверяемый алгоритм целиком; BRAT проверяет только владение, типы — частично
-(см. `typer.py`, статические острова).
-
-**Практическая разница:** в OCaml GC, а в BRAT — ручное владение. Для
-долгоживущего процесса без пауз GC — аргумент в пользу BRAT; для
-выразительности и типовой дисциплины — в пользу OCaml.
-
-Против Swift
-
-**BRAT лучше:** в Swift нет move-семантики и проверки владения для ссылочных
-типов. Циклы ссылок ловятся только `weak`/`unowned`, компилятор не проверяет
-aliasing мутабельных мест. `unsafe` в Swift есть и он настоящий.
-Эксклюзивность доступа Swift — runtime-предикаты, а не статика.
-
-**Swift лучше:** ARC, `weak`/`unowned`, `guard let`, `@escaping`, полноценные
-протоколы с associated types и existential types (`any Protocol`),
-value semantics для структур, ключевые пути, компиляция в нативный код через
-LLVM с оптимизацией, зрелый тулчейн. BRAT не имеет ни того, ни другого.
-
-**Общее:** оба языка отвечают на вопрос «как выглядит безопасный доступ к
-общему мутабельному состоянию». Swift отвечает ARC и протоколами, BRAT —
-move и линейными алиасами. Ни один из двух не даёт того, что даёт Rust:
-статическую гарантию отсутствия гонок.
-
-Что осталось непроверенным
-
-- Что `move` гарантирует на уровне рантайма C-бэкенда — выясняется. Не
-  полагайтесь, прочитайте `codegen_c.py` и `brat/runtime.py`.
-- Ни одного независимого аудита безопасности BRAT не проходил.
-- Мono fast-path численно не измерен. Механизм есть, данных нет.
+BRAT is an experiment in "ownership without annotations." It works for small
+programs, two backends agree, arenas reclaim memory. It is not a Rust replacement
+for production. It is a bet that a smaller, simpler language with honest limits
+can be useful for a niche.
