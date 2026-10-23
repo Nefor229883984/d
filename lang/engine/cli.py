@@ -1092,13 +1092,13 @@ def do_bindgen(args):
         i = j + 1
     # struct definitions (balanced braces, supports nesting) for both
     # `struct Foo { ... };` and `typedef struct { ... } Foo;`.
-    def _find_structs(text):
+    def _find_aggregates(text, keyword):
         out = []
         i = 0
         n = len(text)
         while True:
-            # find next "struct" keyword
-            idx = text.find("struct", i)
+            # find next keyword
+            idx = text.find(keyword, i)
             if idx == -1:
                 break
             # typedef struct?
@@ -1113,7 +1113,7 @@ def do_bindgen(args):
                 break
             # name before brace (for `struct Foo {`)
             seg = text[idx:j].split()
-            name_before = seg[1] if (len(seg) >= 2 and seg[0] == "struct") else None
+            name_before = seg[1] if (len(seg) >= 2 and seg[0] == keyword) else None
             # balanced
             depth = 0
             k = j
@@ -1140,7 +1140,7 @@ def do_bindgen(args):
                 out.append((sname, body))
             i = k + 1
         return out
-    _structs = _find_structs(src)
+    _structs = _find_aggregates(src, "struct")
     _enum_names = set()
     for _m in re.finditer(r"\benum\s+([A-Za-z_]\w*)\s*\{", src):
         _enum_names.add(_m.group(1))
@@ -1159,7 +1159,7 @@ def do_bindgen(args):
                 continue
             # drop array brackets from the name
             _fname = _toks[-1].split("[")[0]
-            _fty = " ".join(_toks[:-1]).replace("struct ", "").replace("enum ", "").strip()
+            _fty = " ".join(_toks[:-1]).replace("struct ", "").replace("union ", "").replace("enum ", "").strip()
             if _fty in _struct_names:
                 _bratty = _fty
             elif _fty in _enum_names:
@@ -1182,7 +1182,7 @@ def do_bindgen(args):
             continue
         if star == "*":
             ret = ret + " *"
-        _rty_name = ret.replace("struct ", "").replace("enum ", "").strip()
+        _rty_name = ret.replace("struct ", "").replace("union ", "").replace("enum ", "").strip()
         if _rty_name in _struct_names:
             rty = _rty_name
         elif _rty_name in _enum_names:
@@ -1243,7 +1243,7 @@ def do_bindgen(args):
                     _pname = "_%d" % len(plist)
                 if not _pname.isidentifier():
                     _pname = "_%d" % len(plist)
-                _tyn = ty.replace("struct ", "").replace("enum ", "").strip()
+                _tyn = ty.replace("struct ", "").replace("union ", "").replace("enum ", "").strip()
                 if _tyn in _struct_names:
                     _brat_ty = _tyn
                 elif _tyn in _enum_names:
