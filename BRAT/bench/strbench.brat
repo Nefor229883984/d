@@ -1,0 +1,45 @@
+// Micro-benchmarks for string building. Run with:
+//   python lang/engine/cli.py build bench/strbench.brat -o sb && ./sb
+// The two builds produce the same string; only the growth strategy differs.
+// Expect `concat` to quadruple per doubling of n and `join` to stay flat.
+
+fn build_concat(n: i64) -> i64 {
+  let mut s = ""
+  let mut i = 0
+  while i < n {
+    s = s + "x"
+    i = i + 1
+  }
+  return len(s)
+}
+
+fn build_join(n: i64) -> i64 {
+  let mut parts = []
+  let mut i = 0
+  while i < n {
+    parts.push("x")
+    i = i + 1
+  }
+  let s = parts.join("")
+  return len(s)
+}
+
+fn now() -> f64 {
+  return time_ms()
+}
+
+fn main() -> i64 {
+  let n = 40000
+  let t0 = now()
+  let a = build_concat(n)
+  let t1 = now()
+  let b = build_join(n)
+  let t2 = now()
+  print("concat n={n} len={a} ms={t1 - t0}")
+  print("join   n={n} len={b} ms={t2 - t1}")
+  if a != b {
+    log.error("benchmarks disagree")
+    return 1
+  }
+  return 0
+}

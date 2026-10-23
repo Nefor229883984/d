@@ -1,0 +1,1338 @@
+fn is_digit(ch: str) -> bool {
+  return ch >= "0" && ch <= "9"
+}
+fn is_alpha(ch: str) -> bool {
+  return (ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z") || ch == "_"
+}
+fn is_alnum(ch: str) -> bool {
+  return is_alpha(ch) || is_digit(ch)
+}
+fn is_kw(w: str) -> bool {
+  return w in ["let", "mut", "fn", "if", "else", "while", "return", "true", "false", "or", "try", "catch", "spawn", "match", "for", "in", "import", "defer", "move", "break", "continue", "impl", "self", "trait", "enum", "const", "pub"]
+}
+fn s_slice(s: str, a: i64, b: i64) -> str {
+  let mut out = ""
+  let mut k = a
+  while k < b && k < len(s) {
+    out += s[k]
+    k += 1
+  }
+  return out
+}
+fn lex(src: str) -> vec {
+  let mut toks = []
+  let mut i: i64 = 0
+  while i < len(src) {
+    let ch = src[i]
+    if ch == " " || ch == "\t" || ch == "\n" || ch == "\r" {
+      i += 1
+    } else {
+      if ch == "/" && i + 1 < len(src) && src[i + 1] == "/" {
+        while i < len(src) && src[i] != "\n" {
+          i += 1
+        }
+      } else {
+        if ch == "\"" {
+          let mut j = i + 1
+          while j < len(src) && src[j] != "\"" {
+            if src[j] == "\\" {
+              j += 1
+            }
+            j += 1
+          }
+          toks.push(["STR", s_slice(src, i, j + 1), i])
+          i = j + 1
+        } else {
+          if is_digit(ch) {
+            let mut j = i
+            let mut seen_dot = false
+            while j < len(src) && (is_digit(src[j]) || (src[j] == "." && !seen_dot && is_digit(src[j + 1]))) {
+              if src[j] == "." {
+                seen_dot = true
+              }
+              j += 1
+            }
+            toks.push(["NUM", s_slice(src, i, j), i])
+            i = j
+          } else {
+            if is_alpha(ch) {
+              let mut j = i
+              while j < len(src) && is_alnum(src[j]) {
+                j += 1
+              }
+              let w = s_slice(src, i, j)
+              if is_kw(w) {
+                toks.push(["KW", w, i])
+              } else {
+                toks.push(["ID", w, i])
+              }
+              i = j
+            } else {
+              let two = s_slice(src, i, i + 2)
+              if two in ["..", "=>", "->", "==", "!=", "<=", ">=", "&&", "||", "+=", "-=", "*=", "/=", "%="] {
+                toks.push(["OP", two, i])
+                i += 2
+              } else {
+                if ch == "." {
+                  toks.push(["DOT", ".", i])
+                } else {
+                  if ch in ["+", "-", "*", "/", "%", "<", ">", "=", "!", "{", "}", "(", ")", "[", "]", ",", ":", ";", "?"] {
+                    toks.push(["OP", ch, i])
+                  }
+                }
+                i += 1
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  return toks
+}
+let mut tks = []
+let mut ci: i64 = 0
+let mut seq: i64 = 0
+fn fresh(tag: str) -> str {
+  seq += 1
+  return "@" + tag + str(seq)
+}
+fn peek() -> vec {
+  if ci < len(tks) {
+    return tks[ci]
+  }
+  return ["EOF", "", 0]
+}
+fn step() -> vec {
+  let t = peek()
+  if t[0] == "EOF" {
+    raise("unexpected end of file")
+  }
+  ci += 1
+  return t
+}
+fn want(v: str) -> vec {
+  let t = step()?
+  if t[1] != v {
+    raise("want " + v + " have " + t[1])
+  }
+  return t
+}
+fn eline() -> i64 {
+  let t = peek()
+  if t[0] == "EOF" {
+    if ci > 0 {
+      return tks[ci - 1][2]
+    }
+    return 1
+  }
+  return t[2]
+}
+fn unesc(s: str) -> str {
+  let mut out = ""
+  let mut i: i64 = 0
+  while i < len(s) {
+    if s[i] == "\\" && i + 1 < len(s) {
+      let n = s[i + 1]
+      if n == "n" {
+        out += "\n"
+      } else {
+        if n == "t" {
+          out += "\t"
+        } else {
+          if n == "r" {
+            out += "\r"
+          } else {
+            if n == "0" {
+              out += "\0"
+            } else {
+              if n in ["\\", "\"", "'"] {
+                out += n
+              } else {
+                out += "\\" + n
+              }
+            }
+          }
+        }
+      }
+      i += 2
+    } else {
+      out += s[i]
+      i += 1
+    }
+  }
+  return out
+}
+fn ann_or_nul(a: vec) -> vec {
+  if a[0] {
+    return a[1]
+  }
+  return ["nul"]
+}
+fn ann_text(toks: vec) -> vec {
+  if len(toks) > 0 && toks[0] in ["move", "mut", "ref"] {
+    return [true, s_slice(toks[0] + "x", 0, 0) + join_all_text(toks, 1)]
+  }
+  if len(toks) == 0 {
+    return [false, ""]
+  }
+  return [true, join_all_text(toks, 0)]
+}
+fn join_all_text(toks: vec, from: i64) -> str {
+  let mut out = ""
+  let mut k = from
+  while k < len(toks) {
+    out += toks[k]
+    k += 1
+  }
+  return out
+}
+fn parse_params() -> vec {
+  let mut params = []
+  while peek()[1] != ")" {
+    let mut pn = step()[1]
+    let mut mode = "ref"
+    if pn in ["move", "mut", "ref"] && peek()[1] != ":" {
+      mode = pn
+      pn = step()[1]
+    }
+    let mut ann = [false, ""]
+    if peek()[1] == ":" {
+      step()?
+      let mut depth = 0
+      let mut first = ""
+      let mut toks = []
+      while true {
+        let x = peek()
+        if x[1] in [",", ")", "="] && depth == 0 {
+          break
+        }
+        if x[1] == "[" {
+          depth += 1
+        }
+        if x[1] == "]" {
+          depth -= 1
+        }
+        if first == "" && depth == 0 && x[0] in ["ID", "KW"] {
+          first = x[1]
+        }
+        toks.push(x[1])
+        step()?
+      }
+      if first in ["move", "mut", "ref"] {
+        mode = first
+      }
+      ann = ann_text(toks)
+    }
+    let mut default = ["nul"]
+    if peek()[1] == "=" {
+      step()?
+      default = parse_expr()?
+    }
+    params.push(["@pair", pn, mode, ann_or_nul(ann), default])
+    if peek()[1] == "," {
+      step()?
+    }
+  }
+  let mut seen = false
+  for p in params {
+    if p[3][0] != "nul" {
+      seen = true
+    } else {
+      if seen {
+        raise("param without default after default")
+      }
+    }
+  }
+  return params
+}
+fn parse_fn() -> vec {
+  want("fn")?
+  let name = step()[1]
+  let mut tparams = []
+  if peek()[1] == "<" {
+    step()?
+    while peek()[1] != ">" {
+      let t = step()?
+      if t[0] != "ID" && t[0] != "KW" {
+        raise("want type param have " + t[1])
+      }
+      tparams.push(t[1])
+      if peek()[1] == "," {
+        step()?
+      }
+    }
+    want(">")?
+  }
+  if len(tparams) != len(tparams.copy().sort().rev().rev()) {
+    raise("dup")
+  }
+  let mut seen2 = {}
+  for tp in tparams {
+    if tp in seen2 {
+      raise("duplicate type param")
+    }
+    seen2[tp] = 1
+  }
+  want("(")?
+  let params = parse_params()?
+  want(")")?
+  let mut ret = [false, ""]
+  if peek()[1] == "->" {
+    step()?
+    if peek()[1] in ["move", "ref"] {
+      if step()[1] == "ref" {
+        raise("ref returns dangle; return owned")
+      }
+    }
+    let mut toks = []
+    while peek()[1] != "{" {
+      toks.push(step()[1])
+    }
+    ret = ann_text(toks)
+  }
+  want("{")?
+  let b = parse_block()?
+  want("}")?
+  return ["fn", name, params, b, tparams, ann_or_nul(ret)]
+}
+fn parse_let(isc: i64) -> vec {
+  if isc == 0 {
+    want("let")?
+  }
+  let mut mut_ = false
+  if peek()[1] == "mut" {
+    step()?
+    mut_ = true
+  }
+  if isc != 0 && mut_ {
+    raise("const cannot be mut")
+  }
+  if peek()[1] == "[" {
+    if isc != 0 {
+      raise("const destructure unsupported")
+    }
+    step()?
+    let mut names = []
+    while peek()[1] != "]" {
+      names.push(step()[1])
+      if peek()[1] == "," {
+        step()?
+      }
+    }
+    want("]")?
+    want("=")?
+    let e = parse_expr()?
+    if peek()[1] == ";" {
+      step()?
+    }
+    let tm = fresh("d")
+    let mut out = []
+    out.push(["let", tm, e, false])
+    let mut ix = 0
+    for name in names {
+      if name != "_" {
+        out.push(["let", name, ["idx", ["var", tm], ["num", ix]], mut_])
+      }
+      ix += 1
+    }
+    return ["@lst", out]
+  }
+  let name = step()[1]
+  let mut ann = [false, ""]
+  if peek()[1] == ":" {
+    step()?
+    let mut toks = []
+    let mut depth = 0
+    while true {
+      let x = peek()
+      if x[1] == "=" && depth == 0 {
+        break
+      }
+      if x[1] == "[" {
+        depth += 1
+      }
+      if x[1] == "]" {
+        depth -= 1
+      }
+      toks.push(x[1])
+      step()?
+    }
+    ann = ann_text(toks)
+  }
+  want("=")?
+  let e = parse_expr()?
+  if peek()[1] == ";" {
+    step()?
+  }
+  if isc == 0 {
+    return ["let", name, e, mut_, false, ann_or_nul(ann)]
+  }
+  return ["let", name, e, false, true, ann_or_nul(ann)]
+}
+fn parse_block() -> vec {
+  let mut stmts = []
+  while peek()[1] != "}" {
+    let r = parse_stmt()?
+    if r[0] == "@lst" {
+      for x in r[1] {
+        stmts.push(x)
+      }
+    } else {
+      stmts.push(r)
+    }
+  }
+  return stmts
+}
+fn parse_stmt() -> vec {
+  let _t = peek()
+  let r = _parse_stmt()?
+  return r
+}
+fn _parse_stmt() -> vec {
+  let t = peek()
+  if t[0] == "KW" && t[1] == "let" {
+    return parse_let(0)?
+  }
+  if t[0] == "KW" && t[1] == "const" {
+    step()?
+    return parse_let(1)?
+  }
+  if t[0] == "KW" && t[1] == "fn" {
+    return parse_fn()?
+  }
+  if t[0] == "KW" && t[1] == "if" {
+    return parse_if()?
+  }
+  if t[0] == "KW" && t[1] == "while" {
+    return parse_while()?
+  }
+  if t[0] == "KW" && t[1] == "for" {
+    return parse_for()?
+  }
+  if t[0] == "KW" && t[1] == "impl" {
+    return parse_impl()?
+  }
+  if t[0] == "KW" && t[1] == "trait" {
+    return parse_trait()?
+  }
+  if t[0] == "KW" && t[1] == "enum" {
+    return parse_enum()?
+  }
+  if t[0] == "KW" && t[1] == "pub" {
+    step()?
+    let u = peek()
+    if u[0] == "KW" && u[1] == "fn" {
+      return ["pub", parse_fn()?]
+    }
+    if u[0] == "KW" && u[1] == "enum" {
+      return ["pub", parse_enum()?]
+    }
+    if u[0] == "KW" && u[1] == "trait" {
+      return ["pub", parse_trait()?]
+    }
+    if u[0] == "KW" && u[1] == "impl" {
+      return ["pub", parse_impl()?]
+    }
+    raise("pub wants fn/enum/trait/impl")
+  }
+  if t[0] == "KW" && t[1] in ["break", "continue"] {
+    step()?
+    if peek()[1] == ";" {
+      step()?
+    }
+    return [t[1]]
+  }
+  if t[0] == "KW" && t[1] == "match" {
+    return parse_match()?
+  }
+  if t[0] == "KW" && t[1] == "return" {
+    step()?
+    let e = parse_expr()?
+    if peek()[1] == ";" {
+      step()?
+    }
+    return ["return", e]
+  }
+  if t[0] == "KW" && t[1] == "try" {
+    return parse_try()?
+  }
+  if t[0] == "KW" && t[1] == "spawn" {
+    step()?
+    want("{")?
+    let b = parse_block()?
+    want("}")?
+    return ["spawn", b]
+  }
+  if t[0] == "KW" && t[1] == "defer" {
+    step()?
+    let e = parse_expr()?
+    if peek()[1] == ";" {
+      step()?
+    }
+    return ["defer", e]
+  }
+  if t[0] == "KW" && t[1] == "import" {
+    step()?
+    let mut parts = [step()[1]]
+    while peek()[1] == "." {
+      step()?
+      parts.push(step()[1])
+    }
+    if peek()[1] == ";" {
+      step()?
+    }
+    return ["import", parts.join(".")]
+  }
+  if t[0] == "ID" && tks[ci + 1][1] == "=" {
+    let name = step()[1]
+    step()?
+    let e = parse_expr()?
+    if peek()[1] == ";" {
+      step()?
+    }
+    return ["set", name, e]
+  }
+  if t[0] == "ID" && tks[ci + 1][1] in ["+=", "-=", "*=", "/=", "%="] {
+    let name = step()[1]
+    let op = s_slice(step()[1], 0, 1)
+    let e = parse_expr()?
+    if peek()[1] == ";" {
+      step()?
+    }
+    return ["set", name, ["bin", op, ["var", name], e]]
+  }
+  let e = parse_expr()?
+  if peek()[1] == "=" || peek()[1] in ["+=", "-=", "*=", "/=", "%="] {
+    let op = step()[1]
+    let mut val = parse_expr()?
+    if peek()[1] == ";" {
+      step()?
+    }
+    if e[0] == "idx" {
+      if op != "=" {
+        val = ["bin", s_slice(op, 0, 1), ["idx", e[1], e[2]], val]
+      }
+      return ["setidx", e[1], e[2], val]
+    }
+    if e[0] == "field" {
+      if op != "=" {
+        val = ["bin", s_slice(op, 0, 1), e, val]
+      }
+      return ["setfield", e[1], e[2], val]
+    }
+    raise("bad assign target")
+  }
+  if peek()[1] == ";" {
+    step()?
+  }
+  return ["expr", e]
+}
+fn parse_if() -> vec {
+  want("if")?
+  if peek()[0] == "KW" && peek()[1] == "let" {
+    step()?
+    let pat = parse_pattern()?
+    want("=")?
+    let scrut = parse_expr()?
+    want("{")?
+    let then = parse_block()?
+    want("}")?
+    let mut els = ["nul"]
+    if peek()[1] == "else" {
+      step()?
+      if peek()[1] == "if" {
+        els = ["@lst2", parse_if()?]
+      } else {
+        want("{")?
+        els = parse_block()?
+        want("}")?
+      }
+    }
+    let tm = fresh("m")
+    let node = build_if(["var", tm], pat, then, els, ["nul"])
+    return ["@lst", [["let", tm, scrut, false], node]]
+  }
+  let cond = parse_expr()?
+  want("{")?
+  let then = parse_block()?
+  want("}")?
+  let mut els = ["nul"]
+  if peek()[1] == "else" {
+    step()?
+    if peek()[1] == "if" {
+      els = ["@lst2", parse_if()?]
+    } else {
+      want("{")?
+      els = parse_block()?
+      want("}")?
+    }
+  }
+  return ["if", cond, then, els]
+}
+fn parse_while() -> vec {
+  want("while")?
+  if peek()[0] == "KW" && peek()[1] == "let" {
+    step()?
+    let pat = parse_pattern()?
+    want("=")?
+    let scrut = parse_expr()?
+    want("{")?
+    let body = parse_block()?
+    want("}")?
+    let tm = fresh("m")
+    let inner = build_if(["var", tm], pat, body, [["break"]], ["nul"])
+    return ["@lst", [["while", ["bool", true], [["let", tm, scrut, false], inner]]]]
+  }
+  let cond = parse_expr()?
+  want("{")?
+  let b = parse_block()?
+  want("}")?
+  return ["while", cond, b]
+}
+fn parse_try() -> vec {
+  want("try")?
+  want("{")?
+  let b = parse_block()?
+  want("}")?
+  want("catch")?
+  let mut ename = ["nul"]
+  if peek()[1] != "{" {
+    ename = step()[1]
+  }
+  want("{")?
+  let h = parse_block()?
+  want("}")?
+  return ["try", b, h, ename]
+}
+fn parse_for() -> vec {
+  want("for")?
+  let v = step()?
+  if v[0] != "ID" {
+    raise("want loop var have " + v[1])
+  }
+  want("in")?
+  let start = parse_expr()?
+  if peek()[1] == ".." {
+    step()?
+    let end = parse_expr()?
+    want("{")?
+    let body = parse_block()?
+    want("}")?
+    return ["forrange", v[1], start, end, body]
+  }
+  want("{")?
+  let body = parse_block()?
+  want("}")?
+  return ["foriter", v[1], start, body]
+}
+fn parse_enum() -> vec {
+  want("enum")?
+  let tname = step()[1]
+  want("{")?
+  let mut variants = []
+  while peek()[1] != "}" {
+    let v = step()?
+    if v[0] != "ID" && v[0] != "KW" {
+      raise("want variant have " + v[1])
+    }
+    let mut fields = []
+    if peek()[1] == "(" {
+      step()?
+      while peek()[1] != ")" {
+        let f = step()?
+        if f[0] != "ID" && f[0] != "KW" {
+          raise("want field have " + f[1])
+        }
+        fields.push(f[1])
+        if peek()[1] == "," {
+          step()?
+        }
+      }
+      want(")")?
+    }
+    variants.push(["@pair", v[1], fields])
+    if peek()[1] == "," {
+      step()?
+    }
+  }
+  want("}")?
+  return ["enum", tname, variants]
+}
+fn parse_sig() -> vec {
+  want("fn")?
+  let name = step()[1]
+  want("(")?
+  let full = parse_params()?
+  let mut params = []
+  for p in full {
+    params.push(["@pair", p[1], p[2], p[3]])
+  }
+  want(")")?
+  let mut ret = [false, ""]
+  if peek()[1] == "->" {
+    step()?
+    if peek()[1] in ["move", "ref"] {
+      if step()[1] == "ref" {
+        raise("ref returns dangle; return owned")
+      }
+    }
+    let mut toks = []
+    while peek()[1] != "}" && !(peek()[0] == "KW" && peek()[1] == "fn") {
+      toks.push(step()[1])
+    }
+    ret = ann_text(toks)
+  }
+  return ["sig", name, params, ret[1]]
+}
+fn parse_trait() -> vec {
+  want("trait")?
+  let name = step()[1]
+  want("{")?
+  let mut sigs = []
+  while peek()[1] != "}" {
+    sigs.push(parse_sig()?)
+  }
+  want("}")?
+  return ["trait", name, sigs]
+}
+fn parse_impl() -> vec {
+  want("impl")?
+  let mut tname = step()[1]
+  let mut tr = ["nul"]
+  if peek()[1] == "for" {
+    step()?
+    tr = tname
+    tname = step()[1]
+  }
+  want("{")?
+  let mut fns = []
+  while peek()[1] != "}" {
+    fns.push(parse_fn()?)
+  }
+  want("}")?
+  return ["impl", tr, tname, fns]
+}
+fn parse_pat_arg() -> vec {
+  let t = peek()
+  if t[0] == "ID" && t[1] == "_" {
+    step()?
+    return ["wild"]
+  }
+  if t[0] == "ID" && t[1] == "None" {
+    step()?
+    return ["none"]
+  }
+  if t[0] == "KW" && t[1] in ["true", "false"] {
+    step()?
+    return ["lit", ["bool", t[1] == "true"]]
+  }
+  if t[0] == "ID" && tks[ci + 1][1] == "(" {
+    step()?
+    let vname = t[1]
+    want("(")?
+    let mut subs = []
+    while peek()[1] != ")" {
+      subs.push(parse_pat_arg()?)
+      if peek()[1] == "," {
+        step()?
+      }
+    }
+    want(")")?
+    return ["variant", lower_first(vname), subs]
+  }
+  if t[0] == "NUM" {
+    step()?
+    if t[1].contains(".") {
+      return ["lit", ["num", unwrap(t[1].parse_float())]]
+    }
+    return ["lit", ["num", unwrap(t[1].parse_int())]]
+  }
+  if t[0] == "STR" {
+    step()?
+    return ["lit", expand_str(unesc(s_slice(t[1], 1, len(t[1]) - 1)))]
+  }
+  if t[0] == "ID" {
+    step()?
+    return ["bind", t[1]]
+  }
+  raise("bad pattern arg " + t[1])
+  return ["bad"]
+}
+fn lower_first(s: str) -> str {
+  return s.lower()
+}
+fn parse_pattern() -> vec {
+  let t = peek()
+  if t[0] == "ID" && t[1] == "_" {
+    step()?
+    return ["nul"]
+  }
+  let p = parse_pat_arg()?
+  if p[0] == "bind" {
+    if s_slice(p[1], 0, 1) >= "A" && s_slice(p[1], 0, 1) <= "Z" {
+      return ["variant", lower_first(p[1]), []]
+    }
+    return ["bind", p[1]]
+  }
+  return p
+}
+fn build_if(tm: vec, pat: vec, body: vec, rest: vec, guard: vec) -> vec {
+  if guard[0] != "nul" && pat[0] != "nul" && pat[0] != "wild" {
+    return build_arm(tm, pat, [["if", guard, body, rest]], rest)
+  }
+  return build_arm(tm, pat, body, rest)
+}
+fn build_arm(tm: vec, pat: vec, body: vec, rest: vec) -> vec {
+  if pat[0] == "nul" || pat[0] == "wild" {
+    return ["@grp", body]
+  }
+  if pat[0] == "lit" {
+    return ["if", ["bin", "==", tm, pat[1]], body, rest]
+  }
+  if pat[0] == "none" {
+    return ["if", ["call", "is_none", [tm]], body, rest]
+  }
+  if pat[0] == "variant" {
+    let tag = pat[1]
+    let subs = pat[2]
+    let mut pre = []
+    let mut inner = body.copy()
+    let mut j = len(subs)
+    while j > 0 {
+      j -= 1
+      let sp = subs[j]
+      let acc = ["call", "__at", [tm, ["num", j + 1]]]
+      if sp[0] == "bind" {
+        pre.push(["let", sp[1], acc, false])
+      } else {
+        if sp[0] != "wild" {
+          let t = fresh("p")
+          pre.push(["let", t, acc, false])
+          inner = [build_if(["var", t], sp, inner, rest, ["nul"])]
+        }
+      }
+    }
+    return ["if", ["bin", "==", ["call", "tagof", [tm]], ["str", tag]], pre + inner, rest]
+  }
+  if pat[0] == "bind" {
+    return ["@grp", [["let", pat[1], tm, false]] + body]
+  }
+  raise("bad match pattern")
+  return ["bad"]
+}
+fn parse_match() -> vec {
+  let _ml = eline()
+  want("match")?
+  let scrut = parse_expr()?
+  want("{")?
+  let mut arms = []
+  let mut seen = []
+  while peek()[1] != "}" {
+    eprint("arm at ", ci)
+    let pat = parse_pattern()?
+    let mut guard = ["nul"]
+    if peek()[0] == "KW" && peek()[1] == "if" {
+      step()?
+      guard = parse_expr()?
+    }
+    want("=>")?
+    eprint("guard done ", ci)
+    if pat[0] != "nul" {
+      let key = sexp(pat) + sexp(guard)
+      if key in seen {
+        raise("duplicate match pattern " + key)
+      }
+      seen.push(key)
+    }
+    eprint("body next ", ci)
+    let mut body = []
+    if peek()[1] == "{" {
+      step()?
+      body = parse_block()?
+      want("}")?
+    } else {
+      body = [parse_stmt()?]
+    }
+    arms.push([pat, guard, body])
+    if peek()[1] == "," {
+      step()?
+    }
+  }
+  want("}")?
+  if len(arms) == 0 {
+    raise("match needs arms")
+  }
+  let tm = fresh("m")
+  let mut node = ["nul"]
+  let mut ai = len(arms)
+  while ai > 0 {
+    ai -= 1
+    let arm = arms[ai]
+    let pat = arm[0]
+    let guard = arm[1]
+    let body = arm[2]
+    if pat[0] == "nul" || (pat[0] in ["wild", "bind"] && guard[0] == "nul") {
+      if node[0] != "nul" {
+        raise("_ must be last")
+      }
+      if pat[0] == "bind" {
+        node = ["@grp", [["let", pat[1], ["var", tm], false]] + body]
+      } else {
+        node = ["@grp", body]
+      }
+    } else {
+      let mut rest = []
+      if node[0] != "nul" {
+        rest = node
+      }
+      node = build_if(["var", tm], pat, body, rest, guard)
+    }
+  }
+  if node[0] == "nul" {
+    return ["@lst", [["expr", scrut]]]
+  }
+  if node[0] == "@grp" {
+    return ["@lst", [["let", tm, scrut, false]] + node[1]]
+  }
+  return ["@lst", [["let", tm, scrut, false], node]]
+}
+fn parse_expr() -> vec {
+  return parse_or()?
+}
+fn parse_or() -> vec {
+  let mut e = parse_lor()?
+  while peek()[1] == "or" {
+    step()?
+    e = ["or", e, parse_lor()?]
+  }
+  return e
+}
+fn parse_lor() -> vec {
+  let mut e = parse_land()?
+  while peek()[1] == "||" {
+    step()?
+    e = ["bin", "||", e, parse_land()?]
+  }
+  return e
+}
+fn parse_land() -> vec {
+  let mut e = parse_cmp()?
+  while peek()[1] == "&&" {
+    step()?
+    e = ["bin", "&&", e, parse_cmp()?]
+  }
+  return e
+}
+fn parse_cmp() -> vec {
+  let mut e = parse_add()?
+  while peek()[1] in ["==", "!=", "<", ">", "<=", ">=", "in"] {
+    let op = step()[1]
+    e = ["bin", op, e, parse_add()?]
+  }
+  return e
+}
+fn parse_add() -> vec {
+  let mut e = parse_mul()?
+  while peek()[1] in ["+", "-"] {
+    let op = step()[1]
+    e = ["bin", op, e, parse_mul()?]
+  }
+  return e
+}
+fn parse_mul() -> vec {
+  let mut e = parse_un()?
+  while peek()[1] in ["*", "/", "%"] {
+    let op = step()[1]
+    e = ["bin", op, e, parse_un()?]
+  }
+  return e
+}
+fn parse_un() -> vec {
+  if peek()[1] in ["!", "-"] {
+    let op = step()[1]
+    return ["un", op, parse_un()?]
+  }
+  if peek()[0] == "KW" && peek()[1] == "move" {
+    step()?
+    return ["move", parse_un()?]
+  }
+  return parse_post()?
+}
+fn parse_post() -> vec {
+  let mut e = parse_prim()?
+  while true {
+    if peek()[1] == "?" {
+      step()?
+      e = ["quest", e]
+    } else {
+      if peek()[1] == "[" {
+        step()?
+        let ix = parse_expr()?
+        want("]")?
+        e = ["idx", e, ix]
+      } else {
+        if peek()[0] == "DOT" {
+          step()?
+          let meth = step()[1]
+          if peek()[1] == "(" {
+            step()?
+            let mut args = []
+            while peek()[1] != ")" {
+              args.push(parse_expr()?)
+              if peek()[1] == "," {
+                step()?
+              }
+            }
+            want(")")?
+            if e == ["var", "trace"] && peek()[1] == "{" {
+              step()?
+              let body = parse_block()?
+              want("}")?
+              args.push(["closure", ["nul"], [], body])
+            }
+            e = ["mcall", e, meth, args]
+          } else {
+            e = ["field", e, meth]
+          }
+        } else {
+          return e
+        }
+      }
+    }
+  }
+  return e
+}
+fn expand_str(raw: str) {
+  if !raw.contains("{") {
+    return ["str", raw]
+  }
+  let mut parts = []
+  let mut buf = ""
+  let mut i: i64 = 0
+  while i < len(raw) {
+    let ch = raw[i]
+    if ch == "{" {
+      let mut j = i + 1
+      let mut depth = 1
+      while j < len(raw) && depth > 0 {
+        if raw[j] == "{" {
+          depth += 1
+        } else {
+          if raw[j] == "}" {
+            depth -= 1
+          }
+        }
+        j += 1
+      }
+      if depth == 0 {
+        let sub = parse_sub(s_slice(raw, i + 1, j - 1))
+        if !is_none(sub) {
+          if len(buf) > 0 {
+            parts.push(["lit", buf])
+            buf = ""
+          }
+          parts.push(["expr", sub])
+          i = j
+        } else {
+          buf = buf + ch
+          i += 1
+        }
+      } else {
+        buf = buf + ch
+        i += 1
+      }
+    } else {
+      buf = buf + ch
+      i += 1
+    }
+  }
+  if len(buf) > 0 {
+    parts.push(["lit", buf])
+  }
+  if len(parts) == 0 {
+    return ["str", ""]
+  }
+  if len(parts) == 1 {
+    if parts[0][0] == "expr" {
+      return parts[0][1]
+    }
+    return ["rstr", parts[0][1]]
+  }
+  let mut node = parts[0][1]
+  if parts[0][0] == "lit" {
+    node = ["rstr", parts[0][1]]
+  }
+  let mut k: i64 = 1
+  while k < len(parts) {
+    let p = parts[k]
+    let mut nxt = p[1]
+    if p[0] == "lit" {
+      nxt = ["rstr", p[1]]
+    }
+    node = ["bin", "+", node, nxt]
+    k += 1
+  }
+  return node
+}
+fn parse_sub(text: str) {
+  let toks = lex(text)
+  if len(toks) == 0 {
+    return None
+  }
+  let saved_tks = tks.copy()
+  let saved_ci = ci
+  let saved_seq = seq
+  tks = toks
+  ci = 0
+  let mut node = None
+  let mut ok = true
+  try {
+    let e = parse_expr()?
+    if peek()[0] == "EOF" {
+      node = e
+    }
+  } catch e {
+    ok = false
+  }
+  tks = saved_tks
+  ci = saved_ci
+  seq = saved_seq
+  if !ok {
+    return None
+  }
+  return node
+}
+fn parse_prim() -> vec {
+  let t = step()?
+  if t[0] == "NUM" {
+    if t[1].contains(".") || t[1].contains("e") || t[1].contains("E") {
+      return ["num", unwrap(t[1].parse_float())]
+    }
+    return ["num", unwrap(t[1].parse_int())]
+  }
+  if t[0] == "STR" {
+    return expand_str(unesc(s_slice(t[1], 1, len(t[1]) - 1)))
+  }
+  if t[0] == "KW" && t[1] in ["true", "false"] {
+    return ["bool", t[1] == "true"]
+  }
+  if t[0] == "ID" && t[1] == "None" {
+    return ["none"]
+  }
+  if t[1] == "[" {
+    let mut items = []
+    while peek()[1] != "]" {
+      items.push(parse_expr()?)
+      if peek()[1] == "," {
+        step()?
+      }
+    }
+    want("]")?
+    return ["vec", items]
+  }
+  if t[1] == "{" {
+    let mut pairs = []
+    while peek()[1] != "}" {
+      let k = parse_expr()?
+      want(":")?
+      pairs.push(["@pair", k, parse_expr()?])
+      if peek()[1] == "," {
+        step()?
+      }
+    }
+    want("}")?
+    return ["maplit", pairs]
+  }
+  if t[0] == "KW" && t[1] == "fn" {
+    let mut name = ["nul"]
+    if peek()[0] == "ID" && tks[ci + 1][1] == "(" {
+      name = step()[1]
+    }
+  want("(")?
+  let params = parse_params()?
+  want(")")?
+    want("{")?
+    let body = parse_block()?
+    want("}")?
+    return ["closure", name, params, body]
+  }
+  if t[0] == "ID" || t[0] == "KW" {
+    if peek()[1] == "(" {
+      step()?
+      let mut args = []
+      while peek()[1] != ")" {
+        args.push(parse_expr()?)
+        if peek()[1] == "," {
+          step()?
+        }
+      }
+      want(")")?
+      return ["call", t[1], args]
+    }
+    if peek()[1] == "{" && t[0] == "ID" && is_upper(t[1]) {
+      step()?
+      let mut fields = []
+      while peek()[1] != "}" {
+        let k = step()[1]
+        want(":")?
+        fields.push(["@pair", k, parse_expr()?])
+        if peek()[1] == "," {
+          step()?
+        }
+      }
+      want("}")?
+      return ["struct", t[1], fields]
+    }
+    if t[0] == "ID" && is_upper(t[1]) {
+      return ["call", t[1], []]
+    }
+    return ["var", t[1]]
+  }
+  if t[1] == "(" {
+    let e = parse_expr()?
+    want(")")?
+    return e
+  }
+  raise("stuck at " + t[1])
+  return ["bad"]
+}
+fn is_upper(s: str) -> bool {
+  let c = s_slice(s, 0, 1)
+  return c >= "A" && c <= "Z"
+}
+fn esc(s: str) -> str {
+  let mut out = ""
+  let mut i: i64 = 0
+  while i < len(s) {
+    let ch = s[i]
+    if ch == "\\" {
+      out += "\\\\"
+    } else {
+      if ch == "\"" {
+        out += "\\\""
+      } else {
+        if ch == "\n" {
+          out += "\\n"
+        } else {
+          if ch == "\t" {
+            out += "\\t"
+          } else {
+            if ch == "\r" {
+              out += "\\r"
+            } else {
+              out += ch
+            }
+          }
+        }
+      }
+    }
+    i += 1
+  }
+  return out
+}
+let tagset = ["prog", "let", "set", "setidx", "setfield", "fn", "if", "while", "forrange", "foriter", "return", "try", "spawn", "defer", "break", "continue", "import", "pub", "enum", "trait", "impl", "sig", "expr", "or", "bin", "un", "move", "quest", "mcall", "call", "idx", "field", "struct", "maplit", "closure", "vec", "num", "str", "rstr", "bool", "none", "var", "lit", "variant", "wild", "bind", "sig2"]
+fn sexp(n) -> str {
+  if is_vec(n) {
+    if len(n) == 0 {
+      return "[]"
+    }
+    let head = n[0]
+    if is_str(head) && (head in tagset || head == "nul") {
+      if head == "nul" {
+        return "None"
+      }
+      let mut out = "("
+      let mut i: i64 = 0
+      while i < len(n) {
+        if i > 0 {
+          out += " "
+        }
+        out += sexp(n[i])
+        i += 1
+      }
+      return out + ")"
+    }
+    if is_str(head) && head == "@grp" {
+      let mut out = "["
+      let mut i: i64 = 0
+      while i < len(n[1]) {
+        if i > 0 {
+          out += " "
+        }
+        out += sexp(n[1][i])
+        i += 1
+      }
+      return out + "]"
+    }
+    if is_str(head) && head == "@lst" {
+      let mut out = ""
+      for x in n[1] {
+        out += sexp(x) + " "
+      }
+      return out
+    }
+    if is_str(head) && head == "@lst2" {
+      return sexp(n[1])
+    }
+    if is_str(head) && head == "@pair" {
+      let mut out = "("
+      let mut i: i64 = 1
+      while i < len(n) {
+        if i > 1 {
+          out += " "
+        }
+        out += sexp(n[i])
+        i += 1
+      }
+      return out + ")"
+    }
+    let mut out = "["
+    let mut i2: i64 = 0
+    while i2 < len(n) {
+      if i2 > 0 {
+        out += " "
+      }
+      out += sexp(n[i2])
+      i2 += 1
+    }
+    return out + "]"
+  }
+  if is_none(n) {
+    return "None"
+  }
+  if str(n) == "True" || str(n) == "False" {
+    if str(n) == "True" {
+      return "true"
+    }
+    return "false"
+  }
+  if is_str(n) {
+    return "\"" + esc(n) + "\""
+  }
+  return str(n)
+}
+fn main() -> i64 {
+  let a = args()
+  if len(a) == 0 {
+    print("usage: bratp file.brat")
+    return 0
+  }
+  let src = read_file(a[0])?
+  tks = lex(src)
+  ci = 0
+  seq = 0
+  let mut body = []
+  while peek()[0] != "EOF" {
+    let r = parse_stmt()?
+    if r[0] == "@lst" {
+      for x in r[1] {
+        body.push(x)
+      }
+    } else {
+      body.push(r)
+    }
+  }
+  print(sexp(["prog", body]))
+  return 0
+}

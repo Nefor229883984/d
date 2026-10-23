@@ -1,0 +1,23 @@
+import parse
+fn emit(node) -> str {
+  let tag = node[0]
+  if tag == "num" {
+    return str(node[1])
+  }
+  if tag == "bin" {
+    return "(" + emit(node[2]) + " " + node[1] + " " + emit(node[3]) + ")"
+  }
+  return "?"
+}
+fn main() -> i64 {
+  let toks = tokenize("2 + 3 * 4")
+  let r = parse_add(toks, 0)
+  let c = emit(r[0])
+  print(c)
+  if c == "(2 + (3 * 4))" {
+    print("emit ok")
+  } else {
+    return 1
+  }
+  return 0
+}

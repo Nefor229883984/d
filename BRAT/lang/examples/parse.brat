@@ -1,0 +1,203 @@
+fn is_digit(ch: str) -> i64 {
+  if ch >= "0" {
+    if ch <= "9" {
+      return 1
+    }
+  }
+  return 0
+}
+fn is_alpha(ch: str) -> i64 {
+  if ch >= "a" {
+    if ch <= "z" {
+      return 1
+    }
+  }
+  if ch >= "A" {
+    if ch <= "Z" {
+      return 1
+    }
+  }
+  if ch == "_" {
+    return 1
+  }
+  return 0
+}
+fn is_space(ch: str) -> i64 {
+  if ch == " " {
+    return 1
+  }
+  if ch == "\n" {
+    return 1
+  }
+  return 0
+}
+pub fn tokenize(src: str) -> vec {
+  let mut toks = []
+  let mut i: i64 = 0
+  while i < len(src) {
+    let ch = src[i]
+    if is_space(ch) {
+      i = i + 1
+    } else {
+      if is_digit(ch) {
+        let mut j = i
+        let mut num = ""
+        while j < len(src) {
+          let d = src[j]
+          if is_digit(d) {
+            num = num + d
+            j = j + 1
+          } else {
+            break
+          }
+        }
+        toks.push(Tok { kind: "num", val: num })
+        i = j
+      } else {
+        if is_alpha(ch) {
+          let mut j = i
+          let mut word = ""
+          while j < len(src) {
+            let d = src[j]
+            if is_alpha(d) {
+              word = word + d
+              j = j + 1
+            } else {
+              break
+            }
+          }
+          toks.push(Tok { kind: "id", val: word })
+          i = j
+        } else {
+          toks.push(Tok { kind: "op", val: ch })
+          i = i + 1
+        }
+      }
+    }
+  }
+  return toks
+}
+pub fn parse_add(toks, pos: mut i64) -> vec {
+  let r = parse_mul(toks, pos)
+  let mut node = r[0]
+  pos = r[1]
+  while pos < len(toks) {
+    let t = toks[pos]
+    if t.kind == "op" {
+      if t.val == "+" {
+        pos = pos + 1
+        let r2 = parse_mul(toks, pos)
+        node = ["bin", "+", node, r2[0]]
+        pos = r2[1]
+      } else {
+        if t.val == "-" {
+          pos = pos + 1
+          let r2 = parse_mul(toks, pos)
+          node = ["bin", "-", node, r2[0]]
+          pos = r2[1]
+        } else {
+          break
+        }
+      }
+    } else {
+      break
+    }
+  }
+  return [node, pos]
+}
+fn parse_mul(toks, pos: mut i64) -> vec {
+  let r = parse_prim(toks, pos)
+  let mut node = r[0]
+  pos = r[1]
+  while pos < len(toks) {
+    let t = toks[pos]
+    if t.kind == "op" {
+      if t.val == "*" {
+        pos = pos + 1
+        let r2 = parse_prim(toks, pos)
+        node = ["bin", "*", node, r2[0]]
+        pos = r2[1]
+      } else {
+        if t.val == "/" {
+          pos = pos + 1
+          let r2 = parse_prim(toks, pos)
+          node = ["bin", "/", node, r2[0]]
+          pos = r2[1]
+        } else {
+          break
+        }
+      }
+    } else {
+      break
+    }
+  }
+  return [node, pos]
+}
+fn parse_prim(toks, pos: i64) -> vec {
+  let t = toks[pos]
+  if t.kind == "num" {
+    return [["num", unwrap(t.val.parse_int())], pos + 1]
+  }
+  if t.kind == "op" {
+    if t.val == "(" {
+      let r = parse_add(toks, pos + 1)
+      let c = toks[r[1]]
+      if c.val == ")" {
+        return [r[0], r[1] + 1]
+      }
+    }
+  }
+  return [["bad", 0], pos]
+}
+fn run(node) -> i64 {
+  let tag = node[0]
+  if tag == "num" {
+    return node[1]
+  }
+  if tag == "bin" {
+    let op = node[1]
+    let a = run(node[2])
+    let b = run(node[3])
+    if op == "+" {
+      return a + b
+    }
+    if op == "-" {
+      return a - b
+    }
+    if op == "*" {
+      return a * b
+    }
+    return a / b
+  }
+  return 1 / 0
+}
+fn parse_all(src: str) -> i64 {
+  let toks = tokenize(src)
+  let r = parse_add(toks, 0)
+  return r[0]
+}
+fn main() -> i64 {
+  let mut fails = 0
+  if run(parse_all("2 + 3 * 4")) == 14 {
+    print("ok1")
+  } else {
+    fails = fails + 1
+  }
+  if run(parse_all("(1 + 2) * 3")) == 9 {
+    print("ok2")
+  } else {
+    fails = fails + 1
+  }
+  if run(parse_all("10 - 2 * 3")) == 4 {
+    print("ok3")
+  } else {
+    fails = fails + 1
+  }
+  if run(parse_all("100 / 10 / 2")) == 5 {
+    print("ok4")
+  } else {
+    fails = fails + 1
+  }
+  print(fails)
+  return fails
+}
