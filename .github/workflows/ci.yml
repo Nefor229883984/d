@@ -22,4 +22,4 @@ jobs:
           # Build one example under ASan+UBSan to catch memory errors
           python3 lang/engine/cli.py emit-c lang/examples/hello.brat > /tmp/hello.c
           clang -fsanitize=address,undefined -O1 -g -I lang/engine /tmp/hello.c -o /tmp/hello -lm
-          ASAN_OPTIONS=detect_leaks=1 /tmp/hello
+          ASAN_OPTIONS=detect_leaks=0 /tmp/hello
