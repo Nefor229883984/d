@@ -1007,7 +1007,7 @@ def _map_c_type(t):
         return "f64"
     if t in ("char *", "char*", "unsigned char *"):
         return "str"
-    if "*" in t:
+    if "*" in t or "[" in t:
         return "ptr"
     # struct/unknown -> ptr (opaque)
     return "ptr"

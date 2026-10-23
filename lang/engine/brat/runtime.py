@@ -1517,6 +1517,14 @@ def call(name, args, env, funcs):
         if vals[0] == 0:
             raise RuntimeError('null pointer dereference')
         return ctypes.cast(vals[0], ctypes.c_char_p).value.decode('utf-8')
+    if name == 'ptr_write_ptr':
+        if len(vals) != 2:
+            raise TypeError('ptr_write_ptr wants 2 args')
+        import ctypes
+        if vals[0] == 0:
+            raise RuntimeError('null pointer dereference')
+        ctypes.cast(vals[0], ctypes.POINTER(ctypes.c_void_p)).contents.value = vals[1]
+        return 0
     if name == 'env_get':
         if len(vals) != 1:
             raise TypeError('env_get wants 1 arg')

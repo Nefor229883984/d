@@ -1315,29 +1315,34 @@ class Emitter:
         if name == "ptr_read_i64":
             self.need_arity(args, 1, name)
             pa, a = self.ex(args[0])
-            return (pa, "vint(*(long long *)(%s).as.ival)" % a)
+            return (pa, "((%s).as.ival == 0 ? (vraise(\"null pointer dereference\"), vunwind) : vint(*(long long *)(%s).as.ival))" % (a, a))
         if name == "ptr_write_i64":
             self.need_arity(args, 2, name)
             pa, a = self.ex(args[0])
             pb, b = self.ex(args[1])
-            return (pa + pb, "((*(long long *)(%s).as.ival = (%s).as.ival), vint(0))" % (a, b))
+            return (pa + pb, "((%s).as.ival == 0 ? (vraise(\"null pointer dereference\"), vunwind) : ((*(long long *)(%s).as.ival = (%s).as.ival), vint(0)))" % (a, a, b))
         if name == "ptr_read_f64":
             self.need_arity(args, 1, name)
             pa, a = self.ex(args[0])
-            return (pa, "vfloat(*(double *)(%s).as.ival)" % a)
+            return (pa, "((%s).as.ival == 0 ? (vraise(\"null pointer dereference\"), vunwind) : vfloat(*(double *)(%s).as.ival))" % (a, a))
         if name == "ptr_write_f64":
             self.need_arity(args, 2, name)
             pa, a = self.ex(args[0])
             pb, b = self.ex(args[1])
-            return (pa + pb, "((*(double *)(%s).as.ival = (%s).as.fval), vint(0))" % (a, b))
+            return (pa + pb, "((%s).as.ival == 0 ? (vraise(\"null pointer dereference\"), vunwind) : ((*(double *)(%s).as.ival = (%s).as.fval), vint(0)))" % (a, a, b))
         if name == "ptr_read_ptr":
             self.need_arity(args, 1, name)
             pa, a = self.ex(args[0])
-            return (pa, "vint((long long)*(void **)(%s).as.ival)" % a)
+            return (pa, "((%s).as.ival == 0 ? (vraise(\"null pointer dereference\"), vunwind) : vint((long long)*(void **)(%s).as.ival))" % (a, a))
         if name == "ptr_read_str":
             self.need_arity(args, 1, name)
             pa, a = self.ex(args[0])
-            return (pa, "vstr((const char *)(%s).as.ival)" % a)
+            return (pa, "((%s).as.ival == 0 ? (vraise(\"null pointer dereference\"), vunwind) : vstr((const char *)(%s).as.ival))" % (a, a))
+        if name == "ptr_write_ptr":
+            self.need_arity(args, 2, name)
+            pa, a = self.ex(args[0])
+            pb, b = self.ex(args[1])
+            return (pa + pb, "((%s).as.ival == 0 ? (vraise(\"null pointer dereference\"), vunwind) : ((*(void **)(%s).as.ival = (void *)(%s).as.ival), vint(0)))" % (a, a, b))
         if name == "env_get":
             self.need_arity(args, 1, name)
             pa, a = self.ex(args[0])
