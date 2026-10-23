@@ -111,6 +111,19 @@ fn main() -> i64 {
   return 0
 }
 '''),
+    'tainted_container_spawn': ('a spawn inside the block captures', '''
+fn main() -> i64 {
+  let mut box = [0]
+  arena {
+    let v = [1, 2]
+    box.push(v)
+    spawn {
+      print("{len(box)}")
+    }
+  }
+  return 0
+}
+'''),
 }
 
 ACCEPT = {

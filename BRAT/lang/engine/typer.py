@@ -218,6 +218,7 @@ class FnTyper:
         self.errs = errs
         self.env = {}
         self.arena = []   # one set per open arena block: names declared inside it
+        self.tainted = []  # outer containers that now hold arena memory
 
     def inner(self, name):
         return bool(self.arena) and name in self.arena[-1]
@@ -225,6 +226,20 @@ class FnTyper:
     def declare(self, name):
         if self.arena and isinstance(name, str):
             self.arena[-1].add(name)
+
+    def taint(self, name):
+        if self.arena and isinstance(name, str) and not self.inner(name):
+            if not self.tainted:
+                self.tainted.append(set())
+            self.tainted[-1].add(name)
+
+    def is_tainted(self, name):
+        if not isinstance(name, str):
+            return False
+        for s in self.tainted:
+            if name in s:
+                return True
+        return False
 
     def non_scalar_inner(self, names):
         return [n for n in names if self.inner(n) and self.env.get(n, "dyn") not in self.SCALAR]
@@ -437,6 +452,9 @@ class FnTyper:
                               for n in mentions(s[2], set()) if n != s[1])
             if not outer_alias:
                 self.declare(s[1])
+            # Propagate taint: an alias of a tainted outer container is tainted too.
+            if self.arena and isinstance(s[1], str) and any(self.is_tainted(n) for n in mentions(s[2], set())):
+                self.taint(s[1])
             if self.arena and has_node(s[2], "closure") and self.non_scalar_inner(mentions(s[2], set())):
                 self.arena_note("a closure inside the block captures a value made in it",
                                 ownable=False)
@@ -446,6 +464,7 @@ class FnTyper:
             if self.arena and not self.inner(target) and self.escapes(s[2]):
                 self.arena_note("a value made inside the block is assigned to `%s`, "
                                 "which lives outside it" % target)
+                self.taint(target)
             if "." in s[1]:
                 head, field = s[1].split(".", 1)
                 bt = self.env.get(head)
@@ -466,6 +485,7 @@ class FnTyper:
             if self.arena and root and not self.inner(root) and self.escapes(s[3]):
                 self.arena_note("a value made inside the block is stored into `%s`, "
                                 "which lives outside it" % root)
+                self.taint(root)
         elif k == "setfield":
             bt = self.expr(s[1])
             got = self.expr(s[3])
@@ -473,6 +493,7 @@ class FnTyper:
             if self.arena and root and not self.inner(root) and self.escapes(s[3]):
                 self.arena_note("a value made inside the block is stored into `%s`, "
                                 "which lives outside it" % root)
+                self.taint(root)
             if isinstance(bt, tuple) and bt[0] == "struct":
                 if s[2] not in bt[1]:
                     self.errs.note(self.struct_field_err(s[2], bt))
@@ -495,6 +516,7 @@ class FnTyper:
                     if root and root in self.env and not self.inner(root) and any(self.escapes(a) for a in args):
                         self.arena_note("a value made inside the block is stored into `%s`, "
                                         "which lives outside it" % root)
+                        self.taint(root)
                 elif e[0] == "call" and e[1] in self.sigs:
                     args = e[2]
                     if any(self.escapes(a) for a in args) and any(
@@ -504,12 +526,17 @@ class FnTyper:
                 elif e[0] == "closure" and self.non_scalar_inner(mentions(e, set())):
                     self.arena_note("a closure inside the block captures a value made in it",
                                 ownable=False)
+                elif e[0] == "closure" and any(self.is_tainted(n) for n in mentions(e, set())):
+                    self.arena_note("a closure inside the block captures a value made in it",
+                                ownable=False)
         elif k == "if":
             self.expr(s[1])
             if is_arena_block(s):
                 self.arena.append(set())
+                self.tainted.append(set())
                 self.block(s[2])
                 self.arena.pop()
+                self.tainted.pop()
             else:
                 self.block(s[2])
             if s[3]:
@@ -557,6 +584,9 @@ class FnTyper:
         elif k == "spawn":
             if self.arena and self.non_scalar_inner(mentions(s[1], set())):
                 self.arena_note("a spawn inside the block captures a value made in it")
+            if self.arena and any(self.is_tainted(n) for n in mentions(s[1], set())):
+                self.arena_note("a spawn inside the block captures a value made in it",
+                                ownable=False)
             self.block(s[1])
         elif k == "defer":
             self.expr(s[1])
