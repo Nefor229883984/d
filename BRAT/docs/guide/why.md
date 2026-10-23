@@ -3,8 +3,8 @@
 ## Short answer
 
 Rust solves ownership at the cost of annotations and rules you must remember.
-BRAT solves the same problem differently: no annotations at all, and checking
-that is incomplete but honestly admitted. Errors are values, not panics.
+BRAT solves the same problem differently: no lifetime annotations at all, and
+checking that is incomplete but honestly admitted. Errors are values, not panics.
 Telemetry is syntax, not a dependency.
 
 This is v0.1. Below: where this trade wins, and — in a separate section —
@@ -44,7 +44,7 @@ replacing Rust in prod.
 
 ### Where BRAT wins
 
-- **Zero annotations.** Rust's `'a`, elision, HRTB force `fn longest<'a>(...)`.
+- **Zero lifetime annotations.** Rust's `'a`, elision, HRTB force `fn longest<'a>(...)`.
   BRAT has none. Inference is a language rule, not the programmer's job.
 - **Errors need no Result hierarchy.** Rust makes you pick `anyhow`/`thiserror`/
   `Box<dyn Error>`. BRAT has one `Ok`/`Err`, `?` works everywhere, `unwrap` is

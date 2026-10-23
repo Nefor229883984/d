@@ -38,7 +38,7 @@ Cost: months. Benefit: zero Python dependency for the toolchain.
 
 BRAT doesn't beat Rust on raw speed or soundness. It wins on:
 
-- **Zero annotations** — no lifetimes, no elision rules.
+- **Zero lifetime annotations** — no lifetimes, no elision rules.
 - **Errors as values** — no Result hierarchy, `?` everywhere.
 - **Telemetry as syntax** — no tracing SDK.
 - **No async colors** — OS threads, no `Send`/`Sync`.
