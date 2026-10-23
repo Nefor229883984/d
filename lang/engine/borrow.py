@@ -1283,7 +1283,10 @@ def check(prog, extra=None):
     for s in prog[1]:
         node = s[1] if (isinstance(s, tuple) and s and s[0] == "pub") else s
         if isinstance(node, tuple) and node and node[0] in ("fn", "extern"):
-            funcs[node[1]] = fn_modes(node[2])
+            if node[0] == "extern":
+                funcs[node[2]] = fn_modes(node[3])
+            else:
+                funcs[node[1]] = fn_modes(node[2])
         elif isinstance(node, tuple) and node and node[0] == "enum":
             for vname, _fields in node[2]:
                 funcs[vname] = []

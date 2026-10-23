@@ -622,7 +622,7 @@ class FnTyper:
 
 def fn_ret(node):
     if isinstance(node, tuple) and node and node[0] == "extern":
-        return node[3] if len(node) > 3 else None
+        return node[4] if len(node) > 4 else None
     return node[5] if len(node) > 5 else None
 
 
@@ -631,14 +631,21 @@ def collect_sigs(prog, sigs):
         node = s[1] if (isinstance(s, tuple) and s and s[0] == "pub") else s
         if not (isinstance(node, tuple) and node and node[0] in ("fn", "extern")):
             continue
+        if node[0] == "extern":
+            params = node[3]
+            ret = node[4]
+        else:
+            params = node[2]
+            ret = fn_ret(node)
         ptypes = []
         ndef = 0
-        for p in node[2]:
+        for p in params:
             ann = p[2] if isinstance(p, tuple) and len(p) > 2 else None
             ptypes.append(ann_type(ann))
             if isinstance(p, tuple) and len(p) > 3 and p[3] is not None:
                 ndef += 1
-        sigs[node[1]] = (ptypes, ann_type(fn_ret(node)), ndef)
+        name = node[2] if node[0] == "extern" else node[1]
+        sigs[name] = (ptypes, ann_type(ret), ndef)
     return sigs
 
 

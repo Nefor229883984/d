@@ -935,15 +935,20 @@ def call(name, args, env, funcs):
     info = funcs.get(name)
     if isinstance(info, tuple) and info and info[0] == 'extern':
         import ctypes
-        lib = ctypes.CDLL(None)
+        libname = info[3]
+        lib = ctypes.CDLL(libname) if libname else ctypes.CDLL(None)
         fn = getattr(lib, name)
         params, ret = info[1], info[2]
         # build ctypes argtypes
         def to_c(ty, v):
             if ty == 'i64':
                 return ctypes.c_longlong(v)
+            if ty == 'i32':
+                return ctypes.c_int(v)
             if ty == 'str':
                 return ctypes.c_char_p(v.encode('utf-8') if isinstance(v, str) else v)
+            if ty == 'ptr':
+                return ctypes.c_void_p(v)
             return v
         cargs = []
         for p, v in zip(params, vals):
@@ -954,6 +959,8 @@ def call(name, args, env, funcs):
             fn.restype = ctypes.c_longlong
         elif ret == 'str':
             fn.restype = ctypes.c_char_p
+        elif ret == 'ptr':
+            fn.restype = ctypes.c_void_p
         else:
             fn.restype = None
         r = fn(*cargs)
@@ -961,6 +968,10 @@ def call(name, args, env, funcs):
             return r
         if ret == 'str':
             return r.decode('utf-8') if isinstance(r, bytes) else r
+        if ret == 'ptr':
+            if hasattr(r, 'value'):
+                return r.value or 0
+            return r if r is not None else 0
         return None
     if name == 'print':
         _out_line(' '.join(_bstr(v) for v in vals))
@@ -1491,8 +1502,8 @@ def hoist(s, funcs):
         if s[1] not in funcs:
             funcs[s[1]] = (s[2], s[3])
     elif s[0] == 'extern':
-        if s[1] not in funcs:
-            funcs[s[1]] = ('extern', s[2], s[3])
+        if s[2] not in funcs:
+            funcs[s[2]] = ('extern', s[3], s[4], s[1])
     elif s[0] == 'enum':
         for vname, fields in s[2]:
             tag = 'none' if vname == 'None' and not fields else vname.lower()

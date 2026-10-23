@@ -333,8 +333,9 @@ def parse_fn(c):
 
 
 def parse_extern(c):
-    # assumes 'extern' already consumed; optional lib string consumed by caller
-    c.want('KW', 'fn') if False else None
+    lib = None
+    if c.peek().k == 'STR':
+        lib = c.step().v.strip('"')
     if not (c.peek().k == 'KW' and c.peek().v == 'fn'):
         raise SyntaxError('extern wants fn at line %d' % eline(c))
     c.step()  # fn
@@ -354,7 +355,7 @@ def parse_extern(c):
             ret = ann_text(toks)
     if c.peek().v == ';':
         c.step()
-    return ('extern', name, params, ret)
+    return ('extern', lib, name, params, ret)
 
 def parse_arena(c):
     """`arena { body }` becomes an if-block that enters the arena, defers the

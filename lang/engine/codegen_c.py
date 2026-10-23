@@ -848,10 +848,11 @@ class Emitter:
         if k == "pub":
             return self.collect_top(s[1], base)
         if k == "extern":
-            name = s[1]
-            params = s[2]
-            ret = s[3]
-            self.externs[name] = (params, ret)
+            lib = s[1]
+            name = s[2]
+            params = s[3]
+            ret = s[4]
+            self.externs[name] = (params, ret, lib)
             return
         if k == "fn":
             if s[1] not in self.fns:
@@ -1300,7 +1301,7 @@ class Emitter:
             # local binding it reads the binding, as the interpreter does.
             return self.ex(("var", name))
         if name in self.externs:
-            params, ret = self.externs[name]
+            params, ret, _lib = self.externs[name]
             pa_all = []
             cargs = []
             for i, a in enumerate(args):
@@ -1309,6 +1310,8 @@ class Emitter:
                 ann = params[i][2] if isinstance(params[i], tuple) and len(params[i]) > 2 else None
                 if ann == "str":
                     cargs.append("(%s).as.str" % sa)
+                elif ann == "ptr":
+                    cargs.append("(void *)(%s).as.ival" % sa)
                 else:
                     cargs.append("(%s).as.ival" % sa)
             call = "%s(%s)" % (name, ", ".join(cargs))
@@ -1316,6 +1319,8 @@ class Emitter:
                 return (pa_all, "vint(%s)" % call)
             if ret == "str":
                 return (pa_all, "vstr(%s)" % call)
+            if ret == "ptr":
+                return (pa_all, "vint((long long)(%s))" % call)
             return (pa_all + ["%s;" % call], "vnil()")
         if name in self.sym:
             return self.ex_vcall(name, args)
@@ -2458,7 +2463,11 @@ class Emitter:
         self.shared = set()
         self.dropped = set()
         self.emit_prelude_headers()
-        for _name, (_params, _ret) in self.externs.items():
+        self.out.append("#include <stdlib.h>")
+        self.out.append("#include <string.h>")
+        for _name, (_params, _ret, _lib) in self.externs.items():
+            if not _lib:
+                continue
             _ptypes = []
             for _p in _params:
                 _ann = _p[2] if isinstance(_p, tuple) and len(_p) > 2 else None
@@ -2471,6 +2480,8 @@ class Emitter:
                 _cret = "int"
             elif _ret == "str":
                 _cret = "const char *"
+            elif _ret == "ptr":
+                _cret = "void *"
             else:
                 _cret = "long long"
             _cparams = []
@@ -2481,6 +2492,8 @@ class Emitter:
                     _cparams.append("int")
                 elif _a == "str":
                     _cparams.append("const char *")
+                elif _a == "ptr":
+                    _cparams.append("void *")
                 else:
                     _cparams.append("void *")
             self.out.append("extern %s %s(%s);" % (_cret, _name, ", ".join(_cparams) if _cparams else "void"))
