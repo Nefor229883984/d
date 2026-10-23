@@ -202,6 +202,19 @@ fn main() -> i64 {
   return 0
 }
 ''',
+    'newcomer_no_ownership': '''
+fn main() -> i64 {
+  let mut total = 0
+  arena {
+    let nums = [1, 2, 3, 4, 5]
+    for n in nums {
+      total = total + n
+    }
+  }
+  print("sum {total}")
+  return 0
+}
+''',
 }
 
 

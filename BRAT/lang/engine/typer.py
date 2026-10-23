@@ -219,13 +219,20 @@ class FnTyper:
         self.env = {}
         self.arena = []   # one set per open arena block: names declared inside it
         self.tainted = []  # outer containers that now hold arena memory
+        self.region = 0     # monotonic region id for the current arena block
+        self.regions = {}   # name -> region id (None = heap/global)
 
     def inner(self, name):
         return bool(self.arena) and name in self.arena[-1]
 
     def declare(self, name):
-        if self.arena and isinstance(name, str):
-            self.arena[-1].add(name)
+        if isinstance(name, str):
+            if self.arena:
+                self.arena[-1].add(name)
+                self.region = self.region or 1
+                self.regions[name] = self.region
+            else:
+                self.regions[name] = None
 
     def taint(self, name):
         if self.arena and isinstance(name, str) and not self.inner(name):
@@ -534,6 +541,7 @@ class FnTyper:
         elif k == "if":
             self.expr(s[1])
             if is_arena_block(s):
+                self.region += 1
                 self.arena.append(set())
                 self.tainted.append(set())
                 self.block(s[2])
