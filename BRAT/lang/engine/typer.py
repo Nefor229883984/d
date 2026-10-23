@@ -257,7 +257,8 @@ class FnTyper:
         """True when value e may carry arena memory out of the innermost block."""
         if not self.arena or not isinstance(e, tuple) or not e:
             return False
-        if not self.non_scalar_inner(mentions(e, set())):
+        ms = mentions(e, set())
+        if not self.non_scalar_inner(ms) and not any(self.is_tainted(n) for n in ms):
             return False
         # Arithmetic and comparisons yield numbers or bools whatever the operand
         # types; `+` does too when one operand is a number.
