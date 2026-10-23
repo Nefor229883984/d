@@ -1354,6 +1354,60 @@ def call(name, args, env, funcs):
             raise TypeError('sleep_ms wants 1 int arg')
         time.sleep(max(0, vals[0]) / 1000.0)
         return 0
+    if name == 'ptr_null':
+        return 0
+    if name == 'ptr_is_null':
+        if len(vals) != 1:
+            raise TypeError('ptr_is_null wants 1 ptr arg')
+        return vals[0] == 0
+    if name == 'ptr_offset':
+        if len(vals) != 2:
+            raise TypeError('ptr_offset wants 2 args')
+        return vals[0] + vals[1]
+    if name == 'ptr_read_i64':
+        if len(vals) != 1:
+            raise TypeError('ptr_read_i64 wants 1 ptr arg')
+        import ctypes
+        if vals[0] == 0:
+            raise RuntimeError('null pointer dereference')
+        return ctypes.cast(vals[0], ctypes.POINTER(ctypes.c_longlong)).contents.value
+    if name == 'ptr_write_i64':
+        if len(vals) != 2:
+            raise TypeError('ptr_write_i64 wants 2 args')
+        import ctypes
+        if vals[0] == 0:
+            raise RuntimeError('null pointer dereference')
+        ctypes.cast(vals[0], ctypes.POINTER(ctypes.c_longlong)).contents.value = vals[1]
+        return 0
+    if name == 'ptr_read_f64':
+        if len(vals) != 1:
+            raise TypeError('ptr_read_f64 wants 1 ptr arg')
+        import ctypes
+        if vals[0] == 0:
+            raise RuntimeError('null pointer dereference')
+        return ctypes.cast(vals[0], ctypes.POINTER(ctypes.c_double)).contents.value
+    if name == 'ptr_write_f64':
+        if len(vals) != 2:
+            raise TypeError('ptr_write_f64 wants 2 args')
+        import ctypes
+        if vals[0] == 0:
+            raise RuntimeError('null pointer dereference')
+        ctypes.cast(vals[0], ctypes.POINTER(ctypes.c_double)).contents.value = vals[1]
+        return 0
+    if name == 'ptr_read_ptr':
+        if len(vals) != 1:
+            raise TypeError('ptr_read_ptr wants 1 ptr arg')
+        import ctypes
+        if vals[0] == 0:
+            raise RuntimeError('null pointer dereference')
+        return ctypes.cast(vals[0], ctypes.POINTER(ctypes.c_void_p)).contents.value or 0
+    if name == 'ptr_read_str':
+        if len(vals) != 1:
+            raise TypeError('ptr_read_str wants 1 ptr arg')
+        import ctypes
+        if vals[0] == 0:
+            raise RuntimeError('null pointer dereference')
+        return ctypes.cast(vals[0], ctypes.c_char_p).value.decode('utf-8')
     if name == 'env_get':
         if len(vals) != 1:
             raise TypeError('env_get wants 1 arg')
@@ -1579,7 +1633,7 @@ def _struct_class(name):
 def hoist(s, funcs):
     if s[0] == 'pub':
         s = s[1]
-    if s[0] == 'fn':
+    if s[0] in ('fn', 'exportfn'):
         if s[1] not in funcs:
             funcs[s[1]] = (s[2], s[3])
     elif s[0] == 'extern':
@@ -1735,7 +1789,7 @@ def _run_stmt(s, env, funcs):
         if not isinstance(base, dict):
             raise RuntimeError('no field ' + s[2])
         base[s[2]] = v
-    elif k == 'fn':
+    elif k in ('fn', 'exportfn'):
         funcs[s[1]] = (s[2], s[3])
     elif k == 'if':
         _, cond, then, els = s

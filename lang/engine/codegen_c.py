@@ -304,6 +304,7 @@ class Emitter:
         self.traits = {}
         self.externs = {}
         self.structs = {}
+        self.exported = set()
         self.codes = {}
         self.user_meths = set()
         self.clos = []
@@ -838,12 +839,12 @@ class Emitter:
     def collect_src(self, src, base):
         prog = _brat.parse_prog(_brat.Cur(_brat.lex(src)))
         for s in prog[1]:
-            if s[0] in ("fn", "impl", "trait", "enum", "pub", "extern", "externstruct"):
+            if s[0] in ("fn", "impl", "trait", "enum", "pub", "extern", "externstruct", "exportfn"):
                 self.collect_top(s, base)
         for s in prog[1]:
             if s[0] == "import":
                 self.collect_top(s, base)
-            elif s[0] not in ("fn", "impl", "trait", "enum", "pub", "extern", "externstruct"):
+            elif s[0] not in ("fn", "impl", "trait", "enum", "pub", "extern", "externstruct", "exportfn"):
                 self.top_exe.append(("stmt", s))
 
     def collect_top(self, s, base):
@@ -852,6 +853,13 @@ class Emitter:
             return self.collect_top(s[1], base)
         if k == "externstruct":
             self.structs[s[1]] = s[2]
+            return
+        if k == "exportfn":
+            if s[1] not in self.fns:
+                self.fns[s[1]] = (s[2], s[3])
+                self.order.append(("fn", s[1]))
+            self.collect_nested(s[3])
+            self.exported.add(s[1])
             return
         if k == "extern":
             lib = s[1]
@@ -1289,6 +1297,44 @@ class Emitter:
             self.need_arity(args, 1, name)
             pa, a = self.ex(args[0])
             return (pa, "(vsleep_ms(%s), vint(0))" % a)
+        if name == "ptr_null":
+            self.need_arity(args, 0, name)
+            return ([], "vint(0)")
+        if name == "ptr_is_null":
+            self.need_arity(args, 1, name)
+            pa, a = self.ex(args[0])
+            return (pa, "vbool((%s).as.ival == 0)" % a)
+        if name == "ptr_offset":
+            self.need_arity(args, 2, name)
+            pa, a = self.ex(args[0])
+            pb, b = self.ex(args[1])
+            return (pa + pb, "vint((long long)((char *)(%s).as.ival + (%s).as.ival))" % (a, b))
+        if name == "ptr_read_i64":
+            self.need_arity(args, 1, name)
+            pa, a = self.ex(args[0])
+            return (pa, "vint(*(long long *)(%s).as.ival)" % a)
+        if name == "ptr_write_i64":
+            self.need_arity(args, 2, name)
+            pa, a = self.ex(args[0])
+            pb, b = self.ex(args[1])
+            return (pa + pb, "((*(long long *)(%s).as.ival = (%s).as.ival), vint(0))" % (a, b))
+        if name == "ptr_read_f64":
+            self.need_arity(args, 1, name)
+            pa, a = self.ex(args[0])
+            return (pa, "vfloat(*(double *)(%s).as.ival)" % a)
+        if name == "ptr_write_f64":
+            self.need_arity(args, 2, name)
+            pa, a = self.ex(args[0])
+            pb, b = self.ex(args[1])
+            return (pa + pb, "((*(double *)(%s).as.ival = (%s).as.fval), vint(0))" % (a, b))
+        if name == "ptr_read_ptr":
+            self.need_arity(args, 1, name)
+            pa, a = self.ex(args[0])
+            return (pa, "vint((long long)*(void **)(%s).as.ival)" % a)
+        if name == "ptr_read_str":
+            self.need_arity(args, 1, name)
+            pa, a = self.ex(args[0])
+            return (pa, "vstr((const char *)(%s).as.ival)" % a)
         if name == "env_get":
             self.need_arity(args, 1, name)
             pa, a = self.ex(args[0])

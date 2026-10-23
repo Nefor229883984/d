@@ -151,6 +151,11 @@ BRES = {
     "tcp_listen": "tag", "tcp_connect": "tag", "tcp_accept": "tag",
     "tcp_send": "tag", "tcp_recv": "tag", "tcp_close": "tag",
     "sbuf": "int", "sbuf_add": "int", "sbuf_len": "int", "sbuf_str": "str",
+    "ptr_null": "int", "ptr_is_null": "bool",
+    "ptr_read_i64": "int", "ptr_write_i64": "int",
+    "ptr_read_f64": "float", "ptr_write_f64": "int",
+    "ptr_read_ptr": "int", "ptr_offset": "int",
+    "ptr_read_str": "str",
 }
 
 
@@ -644,7 +649,7 @@ def fn_ret(node):
 def collect_sigs(prog, sigs):
     for s in prog[1]:
         node = s[1] if (isinstance(s, tuple) and s and s[0] == "pub") else s
-        if not (isinstance(node, tuple) and node and node[0] in ("fn", "extern")):
+        if not (isinstance(node, tuple) and node and node[0] in ("fn", "extern", "exportfn")):
             continue
         if node[0] == "extern":
             params = node[3]
@@ -672,7 +677,7 @@ def check(prog, extra=None):
     collect_sigs(prog, sigs)
     for s in prog[1]:
         node = s[1] if (isinstance(s, tuple) and s and s[0] == "pub") else s
-        if not (isinstance(node, tuple) and node and node[0] in ("fn", "extern")):
+        if not (isinstance(node, tuple) and node and node[0] in ("fn", "extern", "exportfn")):
             continue
         if node[0] == "extern":
             continue

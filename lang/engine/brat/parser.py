@@ -132,6 +132,12 @@ def _parse_stmt(c):
                 and node[1] is None):
             node = (node[0], block_lib) + node[2:]
         return node
+    if t.k == 'KW' and t.v == 'export':
+        c.step()
+        if not (c.peek().k == 'KW' and c.peek().v == 'fn'):
+            raise SyntaxError('export wants fn at line %d' % eline(c))
+        node = parse_fn(c)
+        return ('exportfn',) + node[1:]
     if t.k == 'KW' and t.v == 'fn':
         return parse_fn(c)
     if t.k == 'KW' and t.v == 'unsafe':

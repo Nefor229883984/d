@@ -34,6 +34,8 @@ BUILTINS = {
     "len", "__at", "Ok", "Err", "Some", "unwrap", "is_err", "is_none", "is_vec", "is_str", "is_map", "tagof",
     "str", "read_file", "write_file", "assert",
     "args", "exit", "eprint", "raise", "time_ms", "sleep_ms", "env_get",
+    "ptr_null", "ptr_is_null", "ptr_offset", "ptr_read_i64", "ptr_write_i64",
+    "ptr_read_f64", "ptr_write_f64", "ptr_read_ptr", "ptr_read_str",
     "__arena_enter", "__arena_leave", "own",
     "re_match",
     "tcp_listen", "tcp_connect", "tcp_accept",
@@ -457,7 +459,7 @@ def used_in_stmt(s, acc):
     elif k == "impl":
         for f in s[3]:
             used_in_block(f[3], acc)
-    elif k == "fn":
+    elif k in ("fn", "exportfn"):
         used_in_block(s[3], acc)
     elif k == "enum":
         return acc
@@ -1040,7 +1042,7 @@ def walk_stmt(s, decl, borrows, errs, funcs):
         check_expr(s[1], decl, errs, funcs)
         scan_moves(s[1], decl, borrows, errs)
         scan_calls(s[1], decl, borrows, errs, funcs, [])
-    elif k == "fn":
+    elif k in ("fn", "exportfn"):
         sub = dict(decl)
         for p in s[2]:
             pn = p[0] if isinstance(p, tuple) else p
@@ -1288,7 +1290,7 @@ def check(prog, extra=None):
     traits = {}
     for s in prog[1]:
         node = s[1] if (isinstance(s, tuple) and s and s[0] == "pub") else s
-        if isinstance(node, tuple) and node and node[0] in ("fn", "extern"):
+        if isinstance(node, tuple) and node and node[0] in ("fn", "extern", "exportfn"):
             if node[0] == "extern":
                 funcs[node[2]] = fn_modes(node[3])
             else:
