@@ -40,17 +40,16 @@
 - FFI (`extern`/`mod`).
 - Бенчмарки (mono fast-path измерить).
 
-## 5. Данные 2025 (обновление)
+## 5. Данные 2026 (обновление)
 
-- **Python** +7pp (2024→2025): 57.9% — go-to для AI, data science, backend.
-- **Rust** 14.8% (+2.2pp), **Go** 16.4%, **TypeScript** 43.6%, **Zig** 2.1%.
-- **AI-интеграция**: 42.5% professional developers use AI tools; языки с AI-support растут.
-- **IDE**: VS Code 75.9%, Cursor 17.9%, Claude Code 9.7% — AI-редакторы растут.
-- **Ключевой тренд**: разработчики ценят языки с хорошим DX, понятными ошибками и быстрым циклом.
+- **Python** 58.0% (стабильно), **Rust** не в топ-10, но admired; **Go** ~16%, **TypeScript** 43.8%, **Zig** 2.1%.
+- **AI-интеграция**: 71.8% devs use LLMs; AI-редакторы растут (Cursor, Claude Code).
+- **Security**: 24% команд теряют время из-за security/privacy issues.
+- **Ключевой тренд**: AI-ассистированная разработка, безопасность, понятные ошибки.
 
 ## 6. Источники
 
-- Stack Overflow Developer Survey 2025.
+- Stack Overflow Developer Survey 2026.
 - Rust: rustc-dev-guide, Miri, CVE-трекинг.
 - Go: `gofmt`, `go test`, `go build`.
 - Zig: simplicity, C-interop, comptime.
