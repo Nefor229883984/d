@@ -2570,6 +2570,8 @@ class Emitter:
                     _cparams.append("const char * " + _arg)
                 elif _ann == "ptr":
                     _cparams.append("void * " + _arg)
+                elif isinstance(_ann, str) and _ann in self.structs:
+                    _cparams.append(_ann + " " + _arg)
                 else:
                     _ok = False
                     break
@@ -2686,6 +2688,19 @@ class Emitter:
                     _pushes.append("vec_push(_a, vstr(%s));" % _arg)
                 elif _ann == "ptr":
                     _pushes.append("vec_push(_a, vint((long long)%s));" % _arg)
+                elif isinstance(_ann, str) and _ann in self.structs:
+                    _sfields = self.structs[_ann]
+                    _sets = []
+                    for _sf, _st in _sfields:
+                        if _st == "str":
+                            _sets.append("map_set(_v.as.map, \"%s\", vstr(%s.%s));" % (_sf, _arg, _sf))
+                        elif _st == "ptr":
+                            _sets.append("map_set(_v.as.map, \"%s\", vint((long long)%s.%s));" % (_sf, _arg, _sf))
+                        elif _st == "f64":
+                            _sets.append("map_set(_v.as.map, \"%s\", vfloat(%s.%s));" % (_sf, _arg, _sf))
+                        else:
+                            _sets.append("map_set(_v.as.map, \"%s\", vint(%s.%s));" % (_sf, _arg, _sf))
+                    _pushes.append("({ Val _v = vstruct(vmap(\"%s\")); %s vec_push(_a, _v); });" % (_ann, " ".join(_sets)))
             _cname = self.cfn("fn:" + _cb_name)
             self.out.append("%s brat_cb_%s(%s) {" % (_cret, _cb_name, ", ".join(_cparams)))
             self.out.append("  Vec *_a = vvec();")
@@ -2700,6 +2715,19 @@ class Emitter:
                 self.out.append("  return (void *)_r.as.ival;")
             elif _cb_ret == "f64":
                 self.out.append("  return _r.as.fval;")
+            elif _cb_ret in self.structs:
+                _sfields = self.structs[_cb_ret]
+                self.out.append("  %s _res = {0};" % _cb_ret)
+                for _sf, _st in _sfields:
+                    if _st == "str":
+                        self.out.append("  _res.%s = (*map_get(_r.as.map, \"%s\")).as.str;" % (_sf, _sf))
+                    elif _st == "ptr":
+                        self.out.append("  _res.%s = (void *)(*map_get(_r.as.map, \"%s\")).as.ival;" % (_sf, _sf))
+                    elif _st == "f64":
+                        self.out.append("  _res.%s = (*map_get(_r.as.map, \"%s\")).as.fval;" % (_sf, _sf))
+                    else:
+                        self.out.append("  _res.%s = (*map_get(_r.as.map, \"%s\")).as.ival;" % (_sf, _sf))
+                self.out.append("  return _res;")
             else:
                 self.out.append("  return _r.as.ival;")
             self.out.append("}")
@@ -2737,6 +2765,20 @@ class Emitter:
                 elif _ann == "ptr":
                     _cparams.append("void * " + _arg)
                     _pushes.append("vec_push(_a, vint((long long)%s));" % _arg)
+                elif isinstance(_ann, str) and _ann in self.structs:
+                    _cparams.append("%s %s" % (_ann, _arg))
+                    _sfields = self.structs[_ann]
+                    _sets = []
+                    for _sf, _st in _sfields:
+                        if _st == "str":
+                            _sets.append("map_set(_v.as.map, \"%s\", vstr(%s.%s));" % (_sf, _arg, _sf))
+                        elif _st == "ptr":
+                            _sets.append("map_set(_v.as.map, \"%s\", vint((long long)%s.%s));" % (_sf, _arg, _sf))
+                        elif _st == "f64":
+                            _sets.append("map_set(_v.as.map, \"%s\", vfloat(%s.%s));" % (_sf, _arg, _sf))
+                        else:
+                            _sets.append("map_set(_v.as.map, \"%s\", vint(%s.%s));" % (_sf, _arg, _sf))
+                    _pushes.append("({ Val _v = vstruct(vmap(\"%s\")); %s vec_push(_a, _v); });" % (_ann, " ".join(_sets)))
                 else:
                     _ok = False
                     break
@@ -2771,6 +2813,19 @@ class Emitter:
                 self.out.append("  return (void *)_r.as.ival;")
             elif _ex_ret == "f64":
                 self.out.append("  return _r.as.fval;")
+            elif _ex_ret in self.structs:
+                _sfields = self.structs[_ex_ret]
+                self.out.append("  %s _res = {0};" % _ex_ret)
+                for _sf, _st in _sfields:
+                    if _st == "str":
+                        self.out.append("  _res.%s = (*map_get(_r.as.map, \"%s\")).as.str;" % (_sf, _sf))
+                    elif _st == "ptr":
+                        self.out.append("  _res.%s = (void *)(*map_get(_r.as.map, \"%s\")).as.ival;" % (_sf, _sf))
+                    elif _st == "f64":
+                        self.out.append("  _res.%s = (*map_get(_r.as.map, \"%s\")).as.fval;" % (_sf, _sf))
+                    else:
+                        self.out.append("  _res.%s = (*map_get(_r.as.map, \"%s\")).as.ival;" % (_sf, _sf))
+                self.out.append("  return _res;")
             else:
                 self.out.append("  return _r.as.ival;")
             self.out.append("}")
