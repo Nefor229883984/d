@@ -1040,8 +1040,56 @@ def do_bindgen(args):
     src = re.sub(r"//[^\\n]*", " ", src)
     # collapse newlines to spaces for multiline decls
     src = src.replace("\n", " ")
-    # find function prototypes: type name(params);
-    decls = re.findall(r"([A-Za-z_][\w\s]*?)\s*(\*?)\s*([A-Za-z_]\w*)\s*\(([^)]*)\)\s*;", src)
+    # find function prototypes: type name(params);  (balanced parens for fn-ptr params)
+    decls = []
+    i = 0
+    nsrc = len(src)
+    while True:
+        # find next '('
+        op = src.find("(", i)
+        if op == -1:
+            break
+        # find matching ')'
+        depth = 0
+        k = op
+        while k < nsrc:
+            if src[k] == "(":
+                depth += 1
+            elif src[k] == ")":
+                depth -= 1
+                if depth == 0:
+                    break
+            k += 1
+        if k >= nsrc:
+            break
+        # expect ';' after ')'
+        j = k + 1
+        while j < nsrc and src[j].isspace():
+            j += 1
+        if j >= nsrc or src[j] != ";":
+            i = op + 1
+            continue
+        # parse pre: return type + name (only the current declaration)
+        _semi = src.rfind(";", 0, op)
+        pre = src[_semi+1:op].rstrip()
+        if ";" in pre:
+            i = j + 1
+            continue
+        # name is last identifier
+        m = re.search(r"([A-Za-z_]\w*)\s*$", pre)
+        if not m:
+            i = op + 1
+            continue
+        name = m.group(1)
+        ret_part = pre[:m.start()].rstrip()
+        # detect pointer star attached to name? handled in ret_part? star may be in ret_part
+        star = ""
+        if ret_part.endswith("*"):
+            star = "*"
+            ret_part = ret_part[:-1].rstrip()
+        params_str = src[op+1:k].strip()
+        decls.append((ret_part, star, name, params_str))
+        i = j + 1
     # struct definitions (balanced braces, supports nesting) for both
     # `struct Foo { ... };` and `typedef struct { ... } Foo;`.
     def _find_structs(text):
@@ -1148,15 +1196,37 @@ def do_bindgen(args):
         else:
             plist = []
             varargs = False
-            for part in pstr.split(","):
+            _parts = []
+            _depth = 0
+            _cur = ""
+            for _ch in pstr:
+                if _ch == "(":
+                    _depth += 1
+                    _cur += _ch
+                elif _ch == ")":
+                    _depth -= 1
+                    _cur += _ch
+                elif _ch == "," and _depth == 0:
+                    _parts.append(_cur)
+                    _cur = ""
+                else:
+                    _cur += _ch
+            if _cur.strip():
+                _parts.append(_cur)
+            for part in _parts:
                 part = part.strip()
                 if part == "...":
                     varargs = True
                     continue
                 # type may be "type name" or just "type"
                 if "*" in part:
-                    _pname = part.split()[-1] if part.split() else "_%d" % len(plist)
-                    _pname = _pname.lstrip("*").split("[")[0]
+                    # function-pointer params look like `int (*cb)(int)`
+                    _mname = re.search(r"\*\s*([A-Za-z_]\w*)", part)
+                    if _mname:
+                        _pname = _mname.group(1)
+                    else:
+                        _pname = part.split()[-1] if part.split() else "_%d" % len(plist)
+                        _pname = _pname.lstrip("*").split("[")[0]
                     if not _pname.isidentifier():
                         _pname = "_%d" % len(plist)
                     if "char" in part:
