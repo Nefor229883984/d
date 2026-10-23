@@ -94,7 +94,29 @@ BFN Val vbool(long b) { Val v; v.tag = V_BOOL; v.as.b = b ? 1 : 0; return v; }
 BFN Val vint(bint n) { Val v; v.tag = V_INT; v.as.ival = n; return v; }
 BFN Val vfloat(double n) { Val v; v.tag = V_FLOAT; v.as.fval = n; return v; }
 
-BFN Val vlit(const char *s) { Val v; v.tag = V_STR; v.as.str = (char *)s; return v; }
+static void *balloc(size_t n);
+/* Intern table for immortal string literals: avoids one allocation per loop. */
+static struct { const char *src; char *ptr; } _vlit_cache[512];
+static int _vlit_n = 0;
+BFN Val vlit(const char *s) {
+    for (int i = 0; i < _vlit_n; i++) {
+        if (_vlit_cache[i].src == s) {
+            Val v; v.tag = V_STR; v.as.str = _vlit_cache[i].ptr;
+            return v;
+        }
+    }
+    size_t n = strlen(s);
+    char *p = (char *)balloc(n + 1);
+    memcpy(p, s, n + 1);
+    ((BHead *)p - 1)->rc = -1; /* immortal: never freed, never counted */
+    if (_vlit_n < 512) {
+        _vlit_cache[_vlit_n].src = s;
+        _vlit_cache[_vlit_n].ptr = p;
+        _vlit_n++;
+    }
+    Val v; v.tag = V_STR; v.as.str = p;
+    return v;
+}
 
 static void vfatal_oom(void) {
     fputs("brat: out of memory\n", stderr);
@@ -207,9 +229,10 @@ BFN Val varena_leave(void) {
 
 BFN Val vrc_inc(Val v) {
     switch (v.tag) {
-    case V_STR:   if (v.as.str)  ((BHead *)v.as.str - 1)->rc++;  return v;
-    case V_VEC:   if (v.as.vec)  ((BHead *)v.as.vec - 1)->rc++;  return v;
-    case V_STRUCT: if (v.as.map) ((BHead *)v.as.map - 1)->rc++; return v;
+    case V_STR:   if (v.as.str)  { BHead *h = (BHead *)v.as.str - 1; if (h->rc >= 0) h->rc++; }  return v;
+    case V_VEC:   if (v.as.vec)  { BHead *h = (BHead *)v.as.vec - 1; if (h->rc >= 0) h->rc++; }  return v;
+    case V_STRUCT: if (v.as.map) { BHead *h = (BHead *)v.as.map - 1; if (h->rc >= 0) h->rc++; } return v;
+    case V_TAG:   if (v.as.tv.args) { BHead *h = (BHead *)v.as.tv.args - 1; if (h->rc >= 0) h->rc++; } return v;
     default: return v;
     }
 }
@@ -217,7 +240,11 @@ BFN void vrc_dec(Val v) {
     switch (v.tag) {
     case V_STR: {
         char *s = v.as.str;
-        if (s) { BHead *h = (BHead *)s - 1; if (--h->rc == 0) free(h); }
+        if (s) {
+            BHead *h = (BHead *)s - 1;
+            if (h->rc < 0) return; /* immortal */
+            if (--h->rc == 0) free(h);
+        }
         return;
     }
     case V_VEC: {
@@ -420,13 +447,32 @@ BFN Vec *vtag_args_heap(Vec *a) {
     barena_depth = saved;
     return d;
 }
+static char *_vtag_intern(const char *tag);
 BFN Val vtagv_lit(const char *tag, Vec *args) {
-    Val r; r.tag = V_TAG; r.as.tv.tag = (char *)tag; r.as.tv.args = vtag_args_heap(args); return r;
+    Val r; r.tag = V_TAG;
+    r.as.tv.tag = _vtag_intern(tag);
+    r.as.tv.args = vtag_args_heap(args);
+    return r;
+}
+/* Intern table for tag names (Ok, Err, user enum variants): immortal. */
+static struct { const char *src; char *ptr; } _vtag_cache[512];
+static int _vtag_n = 0;
+static char *_vtag_intern(const char *tag) {
+    for (int i = 0; i < _vtag_n; i++) {
+        if (strcmp(_vtag_cache[i].src, tag) == 0) return _vtag_cache[i].ptr;
+    }
+    char *p = strdup(tag);
+    if (!p) vfatal_oom();
+    if (_vtag_n < 512) {
+        _vtag_cache[_vtag_n].src = p;
+        _vtag_cache[_vtag_n].ptr = p;
+        _vtag_n++;
+    }
+    return p;
 }
 BFN Val vtagv(const char *tag, Vec *args) {
     Val r; r.tag = V_TAG;
-    r.as.tv.tag = strdup(tag);
-    if (!r.as.tv.tag) vfatal_oom();
+    r.as.tv.tag = _vtag_intern(tag);
     r.as.tv.args = vtag_args_heap(args);
     return r;
 }

@@ -1984,6 +1984,8 @@ class Emitter:
             return "borrow"  # read out of a container: aliases it
         if k in ("call", "mcall"):
             return "copy"  # callee-owned; never drop call results
+        if k == "mcall":
+            return "copy"  # callee-owned; never drop call results
         return "owned"
 
     def _drop_allowed(self, name):
@@ -2002,12 +2004,14 @@ class Emitter:
         if self._drop_allowed(name):
             self.dropped.add(name)
             self.out.append(ind + "vdrop(%s);" % self.sym[name].cn)
+            self.out.append(ind + "%s = vnil();" % self.sym[name].cn)
 
     def _emit_scope_drops(self, ind):
         """Drop every owned binding still alive at the end of this scope."""
         for name in sorted(self.sym):
             if self._drop_allowed(name):
                 self.out.append(ind + "vdrop(%s);" % self.sym[name].cn)
+                self.out.append(ind + "%s = vnil();" % self.sym[name].cn)
                 self.dropped.add(name)
 
     def splice_file(self, name):

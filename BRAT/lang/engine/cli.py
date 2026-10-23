@@ -267,7 +267,24 @@ def do_run(args):
     if not files:
         print_usage()
         return 2
-    return brat_mod().run_file(files[0], extra)
+    path = files[0]
+    try:
+        src = open(path, encoding="utf-8").read()
+    except OSError as e:
+        sys.stderr.write("brat run: cannot read %s: %s\n" % (path, e))
+        return 1
+    # Arena blocks rely on the escape rules, which only the checker applies.
+    # The interpreter has no arena memory, so the output would be right, but an
+    # escaping value would silently survive the (non-existent) reset. Gate arena
+    # programs the same way `brat build` does.
+    if re.search(r"\\barena\\s*\\{", src):
+        diags = _gate_ownership(path)
+        if diags:
+            sys.stderr.write(
+                "brat run: refusing to run %s: the ownership checker reported "
+                "errors above. Arena blocks depend on the escape rules.\n" % path)
+            return 1
+    return brat_mod().run_file(path, extra)
 
 def do_check(args):
     files = [a for a in args if a != "--"]
