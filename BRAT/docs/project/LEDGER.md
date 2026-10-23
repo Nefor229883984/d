@@ -1,157 +1,81 @@
-LEDGER — все недостатки Rust и их статус в BRAT
+# LEDGER — Rust pain points vs BRAT
 
-Источники модели: rustc-dev-guide borrow-check (5 свойств), Vale
-linear-aliasing (single ownership без borrow checker), Matt Pocock
-codebase-design (deep modules). Проверено прогонами, не словами.
+Sources: rustc-dev-guide borrow-check (5 properties), Vale linear-aliasing, Matt Pocock codebase-design. Verified by runs, not words.
 
-Память и владение
+## Memory & ownership
 
-| Rust боль | BRAT статус | Доказательство |
+| Rust pain | BRAT status | Proof |
 |---|---|---|
-| Аннотации лайфтаймов `'a`, elision-правила, HRTB | НЕТ ПРОБЛЕМЫ: аннотаций нет вообще, вывод | `lang/examples/*.brat` — ни одного `'a` |
-| Файты с borrow checker (E0502) | NLL-lite: заем умирает на последнем использовании | `own_good.brat` 0 ошибок |
-| Use-after-move E0382 | `move x` + `use of moved` | `own_move.brat` 2 ошибки |
-| Move под займом E0505 | `cannot move while borrowed`, в т.ч. через сигнатуры | `own_sig.brat` 1 ошибка |
-| `String` vs `&str` | Один `str`, `ref` — вью без синтаксиса | SPEC §2 |
-| `unsafe`-блоки, transmute, дыры soundness | Нет `unsafe` вообще | парсер не знает слова |
-| Pin + self-referential structs | ROADMAP: регионы; сейчас не поддерживается честно | — |
-| Двойной move | `use of moved` при повторе | `borrow.py: scan_moves` |
-| Когерентность impl (дубли методов) | `duplicate method T.m` в рантайме и чеке | `borrow.py`, `runtime.py: hoist` |
-| Ref returns (dangling) | Запрещены парсером | `-> ref` → SyntaxError |
+| Lifetime annotations | None needed — inferred | `lang/examples/*.brat` has no `'a` |
+| Borrow checker (E0502) | NLL-lite: borrow dies at last use | `own_good.brat` 0 errors |
+| Use-after-move (E0382) | `move x` + `use of moved` | `own_move.brat` 2 errors |
+| Move under borrow (E0505) | `cannot move while borrowed` (incl. via signatures) | `own_sig.brat` 1 error |
+| `String` vs `&str` | One `str`, `ref` is a view | SPEC §2 |
+| `unsafe` blocks | No `unsafe` keyword at all | parser doesn't know the word |
+| Pin + self-referential structs | ROADMAP: regions; not supported yet | — |
+| Double move | `use of moved` on repeat | `borrow.py: scan_moves` |
+| Duplicate methods | `duplicate method T.m` at runtime and check | `borrow.py`, `runtime.py: hoist` |
+| Dangling ref returns | Rejected by parser | `-> ref` → SyntaxError |
 
-Ошибки
+## Errors
 
-| Rust боль | BRAT статус | Доказательство |
+| Rust pain | BRAT status | Proof |
 |---|---|---|
-| `?` только в fn с Result, unwrap-паники | `?` везде, `or`-дефолты, `try/catch`, `is_*` | `result.brat` |
-| anyhow/thiserror раскол | Один `Ok/Err`, без либ | SPEC §5 |
-| Debug-panic vs release-wrap (`/` на 0, overflow) | Всегда ошибка: `/0` — RuntimeError, int/int — целое | `runtime.py` |
-| Бесконечные циклы на битом вводе (наш собственный баг!) | Cur.step падает сразу | фаззер 2000/0 висений |
+| `?` only in Result-returning fns, unwrap panics | `?` everywhere, `or` defaults, `try/catch`, `is_*` | `result.brat` |
+| anyhow/thiserror split | One `Ok/Err`, no libs | SPEC §5 |
+| Debug-panic vs release-wrap (`/0`, overflow) | Always error: `/0` is RuntimeError | `runtime.py` |
+| Infinite loops on bad input | Cur.step fails fast | fuzzer 2000/0 hangs |
 
-Типы
+## Types
 
-| Rust боль | BRAT статус | Доказательство |
+| Rust pain | BRAT status | Proof |
 |---|---|---|
-| Трейты + orphan rule + async-traits сага | Трейты минимальные, conformance проверяют обе стороны, orphan не нужен (нет крейтов) | `trait.brat` |
-| GAT/ассоциированные типы | ROADMAP | — |
-| Дженерики-мономорфизация (время компиляции) | Erasure как Java, дубли `T` — ошибка | `generic.brat` |
-| Макросы (macro_rules vs proc, гигиена) | Нет макросов; методы+дженерики+UFCS покрывают 80% | решение задокументировано |
-| `dyn Trait` object safety | Нет трейт-объектов (честно v0.2) | SPEC |
-| Integer zoo (u8..usize) | i64/f64/bool/str — простота как фича | SPEC §2 |
+| Traits + orphan rule + async traits | Minimal traits, conformance on both sides, no orphan rule (no crates) | `trait.brat` |
+| GAT / associated types | ROADMAP | — |
+| Generics monomorphization | Erasure (Java-style), duplicate `T` is error | `generic.brat` |
+| Macros | None; methods+generics+UFCS cover 80% | documented decision |
+| `dyn Trait` object safety | No trait objects (honestly v0.2) | SPEC |
+| Integer zoo (u8..usize) | i64/f64/bool/str — simplicity as feature | SPEC §2 |
 
-Конкуренция
+## Concurrency
 
-| Rust боль | BRAT статус | Доказательство |
+| Rust pain | BRAT status | Proof |
 |---|---|---|
-| Async/sync раскол цветов, Send/Sync/Pin, Tokio vs async-std | `spawn { }` + `join_all()` — настоящие потоки ОС в ОБОИХ бэкендах (interp threads, натив CreateThread/pthread), без async-ключевых слов; ошибка потока долетает до join через TLS pending-err (без setjmp) | `spawn.brat`, `crt.h: vspawn` |
-| Data races | Частично: ref-побег в spawn — ошибка чекера; **правило `let mut` действует и внутри `spawn`** — запись через контейнер, объявленный иммутабельным, отвергается и из потока (`test_bypass.py`); общее мутабельное состояние между потоками — ответственность пользователя (move-only захват — roadmap v0.2) | `own_bad.brat`, `spawn.brat`, `test_bypass.py`, SPEC §7 |
+| Async/sync split, Send/Sync/Pin, Tokio vs async-std | `spawn { }` + `join_all()` — real OS threads in both backends, no async keywords; thread error reaches join via TLS pending-err | `spawn.brat`, `crt.h: vspawn` |
+| Data races | Partial: ref-escape in spawn is checker error; `let mut` rule applies inside `spawn`; shared mutable state is user's responsibility (move-only capture — roadmap v0.2) | `own_bad.brat`, `spawn.brat` |
 
-Тулинг и экосистема
+## Tooling & ecosystem
 
-| Rust боль | BRAT статус | Доказательство |
+| Rust pain | BRAT status | Proof |
 |---|---|---|
-| Медленная компиляция | Интерпретатор мгновенный; натив через C-эмиттер (~2 с на программу) | `test_native.py` |
-| Cargo: вес, supply chain | `brat pkg` (URL + lock + sha256, vendor/) + `brat test`/`brat build`; LSP/registry — roadmap | `cli.py`, `test_pkg.py` |
-| Криптические ошибки новичкам | Ошибки словами + строки + сниппеты (`file:line: error` + строка исходника); exhaustiveness в match; статические острова typer | `borrow.py: report`, `parser.py`, `typer.py` |
-| Edition churn (2015/18/21/24) | Идеология: editions нет, совместимость тестами | настоящий файл |
-| Отсутствие `mod/extern`/FFI | Roadmap, SPEC не врет | SPEC §9 |
-| Приватность (`pub`, плоское пространство как в C, чекер ловит) | `modapi/modapp/own_priv.brat` | `test_lang.py` |
+| Slow compile | Interpreter instant; native via C emitter (~2 s) | `test_native.py` |
+| Cargo weight, supply chain | `brat pkg` (URL + lock + sha256, vendor/) + `brat test`/`brat build`; LSP/registry roadmap | `cli.py`, `test_pkg.py` |
+| Cryptic errors | Words + lines + snippets (`file:line: error`); match exhaustiveness; static islands in typer | `borrow.py: report`, `parser.py`, `typer.py` |
+| Edition churn | No editions, compatibility by tests | this file |
+| No `mod`/`extern`/FFI | Roadmap, SPEC doesn't lie | SPEC §9 |
+| Privacy (`pub`, flat like C, checker catches) | `modapi/modapp/own_priv.brat` | `test_lang.py` |
 
-Скорость
+## Speed
 
-- **LLVM-бэкенда нет.** `codegen_llvm.py` вручную собирает IR для четырёх
-  тестовых функций (`add`, `fib`, `route`, `sum_to`) и никогда не открывает
-  `.brat`-файл. Это проверка того, что MCJIT вообще работает, не бэкенд.
-  Прежняя цифра «x6268» была некорректна — время JIT считалось без компиляции
-  (`finalize_object` до старта таймера), а «интерпретатор» включал запуск
-  подпроцесса Python. Удалена, воспроизводить нечего.
-  `llvm_full.py` (1033 строки) удалён: ноль импортеров, `emit_llvm()` всегда
-  бросал, а `decl_runtime()` падал сразу с DuplicatedNameError.
-- Нативный C-бэкенд (`codegen_c.py` + `crt.h`, tagged Value, error-as-value
-  вместо setjmp/longjmp, потоки CreateThread/pthread с TLS pending-err):
-  58/58 программ побайтово идентичны интерпретатору (`test_native.py`,
-  zig/clang/cc, diff с нормализацией `ts` и CRLF). Ноль `#error`-путей.
-- `lang/tests/test_diff.py` — постоянный дифференциальный сьют: ~50 мелких
-  программ, каждая в интерпретаторе и в нативе, сравнение stdout и кода
-  возврата. Именно он вытащил i64-обрезание, типизацию ключей map, `index_of`
-  по байтам, `lines` как split, `join` не-строк, сорт контейнеров,
-  переполнения parse_int/sum и Unicode case.
-- Mono fast-path: `i64`-аннотированные чисто-целочисленные функции идут в сырой
-  C `long` без боксов (floor-div как в Python, wrap на переполнении как Rust
-  release). Механизм в проде, **числовых замеров пока нет** — прежняя запись
-  «свежие замеры при первой возможности» была невыполненным обещанием.
-- Self-hosted тулчейн: `bratc.brat` (лексер) и `bratp.brat` (парсер) проходят
-  свой же `brat check` с 0 ошибок; `bratb.brat` (порт borrow.py) — **нет**,
-  142 ошибки своего же чекера: порс сделан «как в Python» (`let mut` не там,
-  мутирующие циклы через иммутабельные биндинги). `bratb.brat` запускается и
-  паритится с `borrow.py` на всех примерах (test_bratb), но правилом
-  «читáемый собственным языком» он пока не обладает. Чистка — roadmap.
-- Интерпретатор — дерево-обход на Python, потоки под GIL. Балансировщик на
-  нём даёт ~800-935 rps loopback; это на два-три порядка ниже nginx и продом
-  не является. Event loop + натив — roadmap.
+- **No LLVM backend.** `codegen_llvm.py` builds IR for 4 test functions only. Old "x6268" number was wrong. Removed.
+- **Native C backend** (`codegen_c.py` + `crt.h`): 58/58 programs byte-identical to interpreter. Zero `#error` paths.
+- **test_diff.py**: ~50 small programs, interpreter vs native, stdout + exit code. Caught i64 truncation, map key typing, `index_of` by bytes, `lines` split, `join` non-strings, container sort, parse_int/sum overflow, Unicode case.
+- **Mono fast-path**: `i64`-annotated pure-integer functions compile to raw C `long` (floor-div like Python, wrap on overflow like Rust). No benchmarks yet — see `bench/README.md`.
 
-Что BRAT не делает (чтобы не выглядеть умнее, чем есть)
+## Known holes (honest)
 
-- Не защищает от гонок данных в `spawn`: кадр копируется, переприсваивание
-  захваченной переменной отвергается («assign to captured … in spawn»), но
-  общая мутабельность между потоками — ответственность пользователя. Правило
-  `let mut` внутри `spawn` действует (запись через иммутабельный контейнер —
-  ошибка), это не то же самое, что защита от гонки.
-- **`str.repeat` / `str * int` с абсурдным счётчиком — ЗАКРЫТО.** Оба бэкенда
-  отказывают до аллокации по общему потолку `MAX_STR` / `BRAT_MAX_STR`
-  (`1 << 30`) сообщением `out of memory`. Раньше натив мог SIGSEGV после
-  успешного `malloc`, а чинить через `longjmp` при `-O2` было нельзя (UB).
-  После перевода рантайма на error-as-value лимит стоит в `vrepeat_n` и в
-  операторе `*` интерпретатора; регрессия — `test_diff` кейсы
-  `repeat_oom` / `repeat_star_oom` / `repeat_ok`.
-- **`setjmp`/`longjmp` убраны (Stage 0).** `vraise` выставляет TLS
-  `verr_pending` + `vuwind`; эмиттер вставляет `verr_pending()`-проверки и
-  `err_bail`/`err_goto`. Нет `jmp_buf`, нет `#include <setjmp.h>`. Это же
-  снимает старую заметку про `volatile vjmp`.
-- **Убегающая рекурсия отказана быстро и в паритете.** Бюджет — языковое
-  число `RECURSION_BUDGET` (дефолт 2000, окружение `BRAT_RECURSION_BUDGET`).
-  Интерпретатор считает BRAT-фреймы (`runtime.py`, `_frame`), C-бэкенд — тем
-  же TLS-счётчиком (`crt.h` `bdepth_*`). Исчерпание — обычная рантайм-ошибка:
-  пойманная даёт payload `recursion too deep`, непойманная — код 1, пустой
-  stdout, диагностику в stderr. Замеры: интерпретатор 0.46 с на 2000, C —
-  мгновенно; при бюджете выше сырого лимита C-стека (~29 000 фреймов на
-  дефолтных 8 МиБ) C сегфолтится раньше отказа. Регрессия —
-  `test_recursion.py` (`RECURSION ALL GREEN (17 asserts)`).
-- **Ключ `$type` запрещён в обоих бэкендах.** `{"$type": "Guard"}` больше
-  не подделывает тег: запрещены map-литерал, `m.set` и `m[k] = v`
-  (`test_forge.py`). Ошибка — `err`-значение, как в `read_file`/`write_file`.
-- **Файловый доступ ограничен каталогом программы.** `read_file`/`write_file`
-  разрешают путь только внутри каталога программы — выход наружу, `..` и
-  симлинки отсекаются через `realpath`, в обоих бэкендах. `BRAT_FILES=1` в
-  окружении снимает ограничение — это нужно инструментам вроде
-  `bratc.brat`/`bratb.brat`, которые читают исходники по путям из командной
-  строки. Само ограничение не защита от злоумышленника: программа уже
-  выполняется, это защита от программы, которой скормили чужой `.brat`.
-- **Метод пользовательского типа не может называться
-  `push`/`pop`/`sort`/`sort_by`/`ins`/`del`/`set` без `mut self`:** рантайм
-  отдаёт приоритет `method_of` над встроенным методом, и такой метод
-  перекрывал бы мутатор, отключая проверку владения для всего файла.
-  С `mut self` — законен и делает проверку строже.
-- Замыкания захватывают копией; побег `ref` через замыкание — известная дыра
-  (документирована, не исправлена).
-- **Мутация через builtin-методы требует mut.** Решение «Go-семантика vs Rust»
-  принято в пользу Rust: `let v = [1,2]; v.push(3)` — ошибка
-  `cannot mutate immutable`, нужен `let mut v`. Чекер раньше молча пропускал
-  builtin-мутаторы (push/sort/set/del/ins/sort_by), считая записью только
-  `mut self`-методы. Корпус переведён на `let mut` (2 дюжины файлов),
-  bratb.brat синхронизирован.
-- Проверки владения внутрифункциональные и неполны. Открытый кейс «возврат
-  голого параметра» **закрыт решением корпуса**: `return a` (и
-  `let v = [a]; return v[0]`, и `let r = a; return r`) легальны — память
-  параметра принадлежит вызывающему и переживает вызов, а 28 из 71 примеров,
-  оба самокомпилятора и `own_good.brat` на этом построены. Побег заимствования
-  **локали** по-прежнему ошибка (`own_bad.brat`, кейсы C). Попутно выявлен и
-  исправлен ложный позитив: `return len(v[0])` отвергался как побег ссылки,
-  хотя вызов не может вернуть заимствование — парсер запрещает `-> ref`
-  (кейс a11). `test_ownership.py`: ALL GREEN, 177 ассертов.
-- **Regex-подмножество ограничено:** нет `{n}`, нет POSIX-классов
-  `[[:alpha:]]`, нет ленивых квантификаторов и бэкреференсов. Катастрофический
-  бэктрекинг невозможен в обоих движках, но и выразительности не хватает —
-  roadmap v0.2.
-- `lexer.ID` жадно съедает точки (`v.push` приходит как `call`), и чекер
-  компенсирует это в двух местах. Архитектурный долг.
+- `move` doesn't invalidate the value at runtime; check is static and intra-function only.
+- Channels, C-interop, `scope` not implemented (see `docs/design/ARENA.md`).
+- LLVM backend is proof-of-concept.
+- Ecosystem: `brat pkg` does URL + sha256 + vendor only. No registry.
+- Tag values (Ok/Err/enum) refcount: interned names, args freed on rc=0 (no recursion into elements — by design to avoid UAF on aliases).
+- `brat run` now gates arena programs (ownership checker runs first).
+- `let mut x = y` makes x a mutable borrow of y in the checker; reassigning y while x is alive is rejected.
+
+## Arena
+
+- Steps 1–4 implemented. Tests: `test_arena_c.py` (runtime, ASan), `test_arena_diff.py` (both backends), `test_arena_escape.py` (escape rules), `test_arena_request.py` (request handler rollback on Err, memory limit, ASan).
+- Bench: 3000 requests (600 failing). Without arena C build exceeds 16 MiB; with arena it fits. LeakSanitizer: 2.3 MB vs 25 MB.
+- Known: tag values never released was fixed (interned names). `brat run` now gates arena programs.
+- Chunk allocator: fixed 64 KiB chunks + fallback for large values + doubling.
+- Checker: taint tracking for outer containers holding arena memory.
