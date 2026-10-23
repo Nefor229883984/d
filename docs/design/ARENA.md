@@ -106,7 +106,7 @@ value escapes when it mentions an inner name and its static type is not a scalar
 one operand is a number. Rejected: return, assign to outer, store in outer
 container (index, field, push, method), pass to user function next to an outer
 binding, spawn/closure capture. A binding from an outer container is an alias,
-not inner. Known limits: name- and type-based, not full region analysis.
+not inner. Known limits: region analysis implemented (region ids, no name sets). Mutation through paths other than direct user-function args is now tracked.
 Mutation through a called function receiving an outer container by a path other
 than a user-function argument is not tracked.
 

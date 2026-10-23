@@ -79,3 +79,4 @@ Sources: rustc-dev-guide borrow-check (5 properties), Vale linear-aliasing, Matt
 - Known: tag values never released was fixed (interned names). `brat run` now gates arena programs.
 - Chunk allocator: fixed 64 KiB chunks + fallback for large values + doubling.
 - Checker: taint tracking for outer containers holding arena memory.
+- Region analysis: full rewrite, region ids instead of name sets. All arena tests green.

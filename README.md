@@ -12,6 +12,7 @@ tests compare their output and exit codes byte-for-byte.
 - `?`, `or`, `try/catch`, `defer`.
 - `log.info`, `trace.span` without imports.
 - Ownership checking (`move`, borrows) inside functions. Errors include file, line, hint.
+- Region analysis for arenas: arena memory cannot escape its block (return, assign, store, pass).
 - Arenas: `arena { ... }` resets memory on exit; `own(x)` copies out. Escape rules checked.
 - Native binary: `brat build`, no runtime, no install on target.
 - `brat build --mem 16M` bakes a hard address-space limit into the binary.
