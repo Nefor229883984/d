@@ -2713,6 +2713,67 @@ class Emitter:
         self.emit_main_close()
         self.emit_closures_queue()
         self.emit_prelude_tables()
+        for _ex_name in sorted(self.exported):
+            _info = self.fns.get(_ex_name)
+            if not (isinstance(_info, tuple) and len(_info) == 2):
+                continue
+            _ex_params, _ex_body = _info
+            _ex_ret = self.fn_ret.get(_ex_name)
+            _cparams = []
+            _pushes = []
+            _ok = True
+            for _i, _p in enumerate(_ex_params):
+                _ann = _p[2] if isinstance(_p, tuple) and len(_p) > 2 else None
+                _arg = "a%d" % _i
+                if _ann in ("i64", "i32"):
+                    _cparams.append(("long long" if _ann == "i64" else "int") + " " + _arg)
+                    _pushes.append("vec_push(_a, vint(%s));" % _arg)
+                elif _ann == "f64":
+                    _cparams.append("double " + _arg)
+                    _pushes.append("vec_push(_a, vfloat(%s));" % _arg)
+                elif _ann == "str":
+                    _cparams.append("const char * " + _arg)
+                    _pushes.append("vec_push(_a, vstr(%s));" % _arg)
+                elif _ann == "ptr":
+                    _cparams.append("void * " + _arg)
+                    _pushes.append("vec_push(_a, vint((long long)%s));" % _arg)
+                else:
+                    _ok = False
+                    break
+            if not _ok:
+                continue
+            if _ex_ret in (None, "none"):
+                _cret = "void"
+            elif _ex_ret in self.structs:
+                _cret = _ex_ret
+            elif _ex_ret in ("i64", "i32"):
+                _cret = "long long" if _ex_ret == "i64" else "int"
+            elif _ex_ret == "f64":
+                _cret = "double"
+            elif _ex_ret == "str":
+                _cret = "const char *"
+            elif _ex_ret == "ptr":
+                _cret = "void *"
+            else:
+                continue
+            _cname = self.cfn("fn:" + _ex_name)
+            self.out.append("")
+            self.out.append("%s %s(%s) {" % (_cret, _ex_name, ", ".join(_cparams)))
+            self.out.append("  Vec *_a = vvec();")
+            for _push in _pushes:
+                self.out.append("  " + _push)
+            self.out.append("  Val _r = %s(NULL, _a);" % _cname)
+            if _ex_ret in (None, "none"):
+                self.out.append("  (void)_r;")
+            elif _ex_ret == "str":
+                self.out.append("  return _r.as.str;")
+            elif _ex_ret == "ptr":
+                self.out.append("  return (void *)_r.as.ival;")
+            elif _ex_ret == "f64":
+                self.out.append("  return _r.as.fval;")
+            else:
+                self.out.append("  return _r.as.ival;")
+            self.out.append("}")
         return "\n".join(self.out) + "\n"
 
     def emit_forward_decls(self):
