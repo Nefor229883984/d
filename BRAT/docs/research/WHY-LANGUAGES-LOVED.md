@@ -40,9 +40,17 @@
 - FFI (`extern`/`mod`).
 - Бенчмарки (mono fast-path измерить).
 
-## 5. Источники
+## 5. Данные 2025 (обновление)
 
-- Stack Overflow Developer Survey 2024.
+- **Python** +7pp (2024→2025): 57.9% — go-to для AI, data science, backend.
+- **Rust** 14.8% (+2.2pp), **Go** 16.4%, **TypeScript** 43.6%, **Zig** 2.1%.
+- **AI-интеграция**: 42.5% professional developers use AI tools; языки с AI-support растут.
+- **IDE**: VS Code 75.9%, Cursor 17.9%, Claude Code 9.7% — AI-редакторы растут.
+- **Ключевой тренд**: разработчики ценят языки с хорошим DX, понятными ошибками и быстрым циклом.
+
+## 6. Источники
+
+- Stack Overflow Developer Survey 2025.
 - Rust: rustc-dev-guide, Miri, CVE-трекинг.
 - Go: `gofmt`, `go test`, `go build`.
 - Zig: simplicity, C-interop, comptime.
