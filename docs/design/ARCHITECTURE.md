@@ -66,7 +66,6 @@ v0.2:
 v0.3:
 - package registry, transitive deps, versioning
 - debugger and profiler integration
-- richer FFI (stable ABI, cross-boundary callbacks)
 
 v1.0:
 - formal soundness story and verification
