@@ -219,20 +219,24 @@ class FnTyper:
         self.env = {}
         self.arena = []   # one set per open arena block: names declared inside it
         self.tainted = []  # outer containers that now hold arena memory
-        self.region = 0     # monotonic region id for the current arena block
-        self.regions = {}   # name -> region id (None = heap/global)
+        self.region = 0     # monotonic region id counter
+        self.regions = {}   # name -> region id (0 = heap/global)
+        self.region_stack = [0]  # 0 = heap/global
+
+    def current_region(self):
+        return self.region_stack[-1]
 
     def inner(self, name):
-        return bool(self.arena) and name in self.arena[-1]
+        r = self.regions.get(name, 0)
+        return self.arena and r != 0 and r == self.current_region()
 
     def declare(self, name):
         if isinstance(name, str):
             if self.arena:
                 self.arena[-1].add(name)
-                self.region = self.region or 1
-                self.regions[name] = self.region
+                self.regions[name] = self.current_region()
             else:
-                self.regions[name] = None
+                self.regions[name] = 0
 
     def taint(self, name):
         if self.arena and isinstance(name, str) and not self.inner(name):
@@ -249,7 +253,14 @@ class FnTyper:
         return False
 
     def non_scalar_inner(self, names):
-        return [n for n in names if self.inner(n) and self.env.get(n, "dyn") not in self.SCALAR]
+        # region-based: a name carries arena memory if its region is non-zero (inner)
+        # and its type is not scalar.
+        out = []
+        for n in names:
+            r = self.regions.get(n, 0)
+            if r != 0 and self.env.get(n, "dyn") not in self.SCALAR:
+                out.append(n)
+        return out
 
     NUM_OPS = ("-", "*", "/", "%", "==", "!=", "<", ">", "<=", ">=", "&&", "||")
 
@@ -543,11 +554,13 @@ class FnTyper:
             self.expr(s[1])
             if is_arena_block(s):
                 self.region += 1
+                self.region_stack.append(self.region)
                 self.arena.append(set())
                 self.tainted.append(set())
                 self.block(s[2])
                 self.arena.pop()
                 self.tainted.pop()
+                self.region_stack.pop()
             else:
                 self.block(s[2])
             if s[3]:
