@@ -932,6 +932,36 @@ def do_method(obj, meth, vals):
 
 def call(name, args, env, funcs):
     vals = [ev(a, env, funcs) for a in args]
+    info = funcs.get(name)
+    if isinstance(info, tuple) and info and info[0] == 'extern':
+        import ctypes
+        lib = ctypes.CDLL(None)
+        fn = getattr(lib, name)
+        params, ret = info[1], info[2]
+        # build ctypes argtypes
+        def to_c(ty, v):
+            if ty == 'i64':
+                return ctypes.c_longlong(v)
+            if ty == 'str':
+                return ctypes.c_char_p(v.encode('utf-8') if isinstance(v, str) else v)
+            return v
+        cargs = []
+        for p, v in zip(params, vals):
+            ann = p[2] if isinstance(p, tuple) and len(p) > 2 else None
+            cargs.append(to_c(ann, v))
+        fn.argtypes = None
+        if ret in ('i64', 'i32'):
+            fn.restype = ctypes.c_longlong
+        elif ret == 'str':
+            fn.restype = ctypes.c_char_p
+        else:
+            fn.restype = None
+        r = fn(*cargs)
+        if ret in ('i64', 'i32'):
+            return r
+        if ret == 'str':
+            return r.decode('utf-8') if isinstance(r, bytes) else r
+        return None
     if name == 'print':
         _out_line(' '.join(_bstr(v) for v in vals))
         return 0
@@ -1460,6 +1490,9 @@ def hoist(s, funcs):
     if s[0] == 'fn':
         if s[1] not in funcs:
             funcs[s[1]] = (s[2], s[3])
+    elif s[0] == 'extern':
+        if s[1] not in funcs:
+            funcs[s[1]] = ('extern', s[2], s[3])
     elif s[0] == 'enum':
         for vname, fields in s[2]:
             tag = 'none' if vname == 'None' and not fields else vname.lower()
@@ -1547,7 +1580,7 @@ def load_mod(name, env, funcs):
     for s in prog[1]:
         hoist(s, funcs)
     for s in prog[1]:
-        if s[0] not in ('fn', 'impl', 'trait', 'enum', 'pub'):
+        if s[0] not in ('fn', 'impl', 'trait', 'enum', 'pub', 'extern'):
             run_stmt(s, env, funcs)
 
 
@@ -1722,7 +1755,7 @@ def run(src, base='.', argv=None):
     for s in prog[1]:
         hoist(s, funcs)
     for s in prog[1]:
-        if s[0] not in ('fn', 'impl', 'trait', 'enum', 'pub'):
+        if s[0] not in ('fn', 'impl', 'trait', 'enum', 'pub', 'extern'):
             run_stmt(s, env, funcs)
     out = call('main', [], env, funcs) if 'main' in funcs else 0
     join_all()

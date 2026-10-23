@@ -2,7 +2,7 @@ import re
 
 
 TOKEN_RE = re.compile(r'(?P<WS>\s+)|(?P<COMMENT>//[^\n]*)|(?P<STR>"(?:\\.|[^"\\])*")|(?P<NUM>\d+\.\d+(?:[eE][+-]?\d+)?|\d+(?:[eE][+-]?\d+)?)|(?P<DOT>\.(?!\.))|(?P<ID>[A-Za-z_][A-Za-z0-9_]*)|(?P<OP>\.\.|=>|->|==|!=|<=|>=|&&|\|\||\+=|-=|\*=|/=|%=|[+\-*/%<>=!{}()\[\],:;?])')
-KEYWORDS = {'let', 'mut', 'fn', 'if', 'else', 'while', 'return', 'true', 'false', 'or', 'try', 'catch', 'spawn', 'match', 'for', 'in', 'import', 'defer', 'move', 'break', 'continue', 'impl', 'self', 'trait', 'enum', 'const', 'pub'}
+KEYWORDS = {'let', 'mut', 'fn', 'if', 'else', 'while', 'return', 'true', 'false', 'or', 'try', 'catch', 'spawn', 'match', 'for', 'in', 'import', 'defer', 'move', 'break', 'continue', 'impl', 'self', 'trait', 'enum', 'const', 'pub', 'extern'}
 
 class Tok:
     __slots__ = ('k', 'v', 'line')

@@ -300,6 +300,7 @@ class Emitter:
         self.mtab = {}
         self.vtab = {}
         self.traits = {}
+        self.externs = {}
         self.codes = {}
         self.user_meths = set()
         self.clos = []
@@ -834,18 +835,24 @@ class Emitter:
     def collect_src(self, src, base):
         prog = _brat.parse_prog(_brat.Cur(_brat.lex(src)))
         for s in prog[1]:
-            if s[0] in ("fn", "impl", "trait", "enum", "pub"):
+            if s[0] in ("fn", "impl", "trait", "enum", "pub", "extern"):
                 self.collect_top(s, base)
         for s in prog[1]:
             if s[0] == "import":
                 self.collect_top(s, base)
-            elif s[0] not in ("fn", "impl", "trait", "enum", "pub"):
+            elif s[0] not in ("fn", "impl", "trait", "enum", "pub", "extern"):
                 self.top_exe.append(("stmt", s))
 
     def collect_top(self, s, base):
         k = s[0]
         if k == "pub":
             return self.collect_top(s[1], base)
+        if k == "extern":
+            name = s[1]
+            params = s[2]
+            ret = s[3]
+            self.externs[name] = (params, ret)
+            return
         if k == "fn":
             if s[1] not in self.fns:
                 self.fns[s[1]] = (s[2], s[3])
@@ -1292,6 +1299,24 @@ class Emitter:
             # A bare uppercase name parses as a zero-arg call; when it names a
             # local binding it reads the binding, as the interpreter does.
             return self.ex(("var", name))
+        if name in self.externs:
+            params, ret = self.externs[name]
+            pa_all = []
+            cargs = []
+            for i, a in enumerate(args):
+                pa, sa = self.ex(a)
+                pa_all.extend(pa)
+                ann = params[i][2] if isinstance(params[i], tuple) and len(params[i]) > 2 else None
+                if ann == "str":
+                    cargs.append("(%s).as.str" % sa)
+                else:
+                    cargs.append("(%s).as.ival" % sa)
+            call = "%s(%s)" % (name, ", ".join(cargs))
+            if ret in ("i64", "i32"):
+                return (pa_all, "vint(%s)" % call)
+            if ret == "str":
+                return (pa_all, "vstr(%s)" % call)
+            return (pa_all + ["%s;" % call], "vnil()")
         if name in self.sym:
             return self.ex_vcall(name, args)
         if self.cap is not None and name in self.cap[1]:
@@ -2433,6 +2458,33 @@ class Emitter:
         self.shared = set()
         self.dropped = set()
         self.emit_prelude_headers()
+        for _name, (_params, _ret) in self.externs.items():
+            _ptypes = []
+            for _p in _params:
+                _ann = _p[2] if isinstance(_p, tuple) and len(_p) > 2 else None
+                _ptypes.append(_ann)
+            if _ret in (None, "none"):
+                _cret = "void"
+            elif _ret == "i64":
+                _cret = "long long"
+            elif _ret == "i32":
+                _cret = "int"
+            elif _ret == "str":
+                _cret = "const char *"
+            else:
+                _cret = "long long"
+            _cparams = []
+            for _a in _ptypes:
+                if _a == "i64":
+                    _cparams.append("long long")
+                elif _a == "i32":
+                    _cparams.append("int")
+                elif _a == "str":
+                    _cparams.append("const char *")
+                else:
+                    _cparams.append("void *")
+            self.out.append("extern %s %s(%s);" % (_cret, _name, ", ".join(_cparams) if _cparams else "void"))
+        self.out.append("")
         self.run_pipeline()
         self.reclaim, self.relet = _reclaim_names(
             [s for k, s in self.top_exe if k == "stmt"], set())

@@ -621,13 +621,15 @@ class FnTyper:
 
 
 def fn_ret(node):
+    if isinstance(node, tuple) and node and node[0] == "extern":
+        return node[3] if len(node) > 3 else None
     return node[5] if len(node) > 5 else None
 
 
 def collect_sigs(prog, sigs):
     for s in prog[1]:
         node = s[1] if (isinstance(s, tuple) and s and s[0] == "pub") else s
-        if not (isinstance(node, tuple) and node and node[0] == "fn"):
+        if not (isinstance(node, tuple) and node and node[0] in ("fn", "extern")):
             continue
         ptypes = []
         ndef = 0
@@ -646,7 +648,9 @@ def check(prog, extra=None):
     collect_sigs(prog, sigs)
     for s in prog[1]:
         node = s[1] if (isinstance(s, tuple) and s and s[0] == "pub") else s
-        if not (isinstance(node, tuple) and node and node[0] == "fn"):
+        if not (isinstance(node, tuple) and node and node[0] in ("fn", "extern")):
+            continue
+        if node[0] == "extern":
             continue
         ret = ann_type(fn_ret(node))
         if ret == "dyn":

@@ -462,6 +462,10 @@ def used_in_stmt(s, acc):
     elif k == "trait":
         return acc
     elif k == "import":
+        return
+    elif k == "extern":
+        return acc
+    elif k == "extern":
         return acc
     elif k == "pub":
         used_in_stmt(s[1], acc)
@@ -1097,6 +1101,8 @@ def walk_stmt(s, decl, borrows, errs, funcs):
         scan_calls(s[1], decl, borrows, errs, funcs, [])
     elif k == "import":
         return
+    elif k == "extern":
+        return
     elif k == "impl":
         seen = set()
         for f in s[3]:
@@ -1276,7 +1282,7 @@ def check(prog, extra=None):
     traits = {}
     for s in prog[1]:
         node = s[1] if (isinstance(s, tuple) and s and s[0] == "pub") else s
-        if isinstance(node, tuple) and node and node[0] == "fn":
+        if isinstance(node, tuple) and node and node[0] in ("fn", "extern"):
             funcs[node[1]] = fn_modes(node[2])
         elif isinstance(node, tuple) and node and node[0] == "enum":
             for vname, _fields in node[2]:

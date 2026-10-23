@@ -74,6 +74,14 @@ def _parse_stmt(c):
     if t.k == 'KW' and t.v == 'const':
         c.step()
         return parse_let(c, True)
+    if t.k == 'KW' and t.v == 'extern':
+        c.step()
+        if c.peek().k == 'STR':
+            c.step()
+        c.want('KW', 'fn') if False else None
+        if not (c.peek().k == 'KW' and c.peek().v == 'fn'):
+            raise SyntaxError('extern wants fn at line %d' % eline(c))
+        return parse_extern(c)
     if t.k == 'KW' and t.v == 'fn':
         return parse_fn(c)
     if t.k == 'KW' and t.v == 'if':
@@ -322,6 +330,31 @@ def parse_fn(c):
     b = parse_block(c)
     c.want('}')
     return ('fn', name, params, b, tparams, ret)
+
+
+def parse_extern(c):
+    # assumes 'extern' already consumed; optional lib string consumed by caller
+    c.want('KW', 'fn') if False else None
+    if not (c.peek().k == 'KW' and c.peek().v == 'fn'):
+        raise SyntaxError('extern wants fn at line %d' % eline(c))
+    c.step()  # fn
+    name = c.step().v
+    tparams = []
+    c.want('(')
+    params = parse_params(c)
+    c.want(')')
+    ret = None
+    if c.peek().v == '->':
+        c.step()
+        toks = []
+        while (c.peek().k != 'EOF' and not (c.peek().k == 'KW' and c.peek().v in ('fn', 'extern', 'let', 'if'))
+               and c.peek().v not in ('{', ';')):
+            toks.append(c.step().v)
+        if toks:
+            ret = ann_text(toks)
+    if c.peek().v == ';':
+        c.step()
+    return ('extern', name, params, ret)
 
 def parse_arena(c):
     """`arena { body }` becomes an if-block that enters the arena, defers the
