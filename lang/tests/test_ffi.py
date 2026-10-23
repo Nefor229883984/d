@@ -1,3 +1,4 @@
+import ctypes
 import os
 import subprocess
 import sys
@@ -147,6 +148,33 @@ def main():
         assert oi == on
         n += 1
         print("ffi ok: custom_callback")
+
+    # Exported BRAT function as a C-callable shared library.
+    src = (
+        'export fn add(a: i64, b: i64) -> i64 { return a + b; }\n'
+        'export fn make(x: i64, y: f64) -> Point { return Point { x: x, y: y }; }\n'
+        'extern struct Point { x: i64, y: f64 }\n'
+        'fn main() -> i32 { return 0; }\n'
+    )
+    epath = os.path.join(TMP, "export.brat")
+    with open(epath, "w", encoding="utf-8") as f:
+        f.write(src)
+    libpath = os.path.join(TMP, "libexport.so")
+    p = subprocess.run([sys.executable, CLI, "build", epath, "--shared", "-o", libpath],
+                       capture_output=True, text=True, timeout=300)
+    assert p.returncode == 0, "shared build failed:\n" + (p.stdout + p.stderr)[-500:]
+    lib = ctypes.CDLL(libpath)
+    lib.add.restype = ctypes.c_longlong
+    lib.add.argtypes = [ctypes.c_longlong, ctypes.c_longlong]
+    assert lib.add(2, 3) == 5, "export add"
+    class _P(ctypes.Structure):
+        _fields_ = [("x", ctypes.c_longlong), ("y", ctypes.c_double)]
+    lib.make.restype = _P
+    lib.make.argtypes = [ctypes.c_longlong, ctypes.c_double]
+    pp = lib.make(7, 2.25)
+    assert pp.x == 7 and abs(pp.y - 2.25) < 1e-9, "export struct"
+    n += 1
+    print("ffi ok: export_shared")
 
     print("FFI ALL GREEN (%d cases)" % n)
 
