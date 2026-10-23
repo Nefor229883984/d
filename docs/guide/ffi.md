@@ -50,8 +50,8 @@ The compiler generates a `brat_cb_<name>` C wrapper; no manual glue.
 ## Pointers
 
 `ptr_null`, `ptr_is_null`, `ptr_offset`, `ptr_read_*`, `ptr_write_*`
-(`i64`, `f64`, `ptr`), `ptr_read_str`. Null dereferences raise in both
-backends.
+(`i64`, `f64`, `ptr`), `ptr_read_str`, `ptr_of_str`, `ptr_write_str`.
+Null dereferences raise in both backends.
 
 ## errno
 
