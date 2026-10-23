@@ -124,6 +124,17 @@ fn main() -> i64 {
   return 0
 }
 '''),
+    'field_escape': ('stored into `box`', '''
+fn main() -> i64 {
+  let mut box = {"v": [0]}
+  arena {
+    let v = [1, 2]
+    box.v = v
+  }
+  print("{len(box.v)}")
+  return 0
+}
+'''),
 }
 
 ACCEPT = {
