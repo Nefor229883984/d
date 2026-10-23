@@ -239,7 +239,9 @@ class FnTyper:
                 self.regions[name] = 0
 
     def taint(self, name):
-        if self.arena and isinstance(name, str) and not self.inner(name):
+        # region-based: taint only outer (non-inner) containers
+        if (self.arena and isinstance(name, str)
+                and self.regions.get(name, 0) != self.current_region()):
             if not self.tainted:
                 self.tainted.append(set())
             self.tainted[-1].add(name)
