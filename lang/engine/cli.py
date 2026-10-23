@@ -1042,12 +1042,63 @@ def do_bindgen(args):
     src = src.replace("\n", " ")
     # find function prototypes: type name(params);
     decls = re.findall(r"([A-Za-z_][\w\s]*?)\s*(\*?)\s*([A-Za-z_]\w*)\s*\(([^)]*)\)\s*;", src)
-    # struct definitions (both `struct Foo { ... };` and `typedef struct { ... } Foo;`)
-    _structs = []
-    for _m in re.finditer(r"\bstruct\s+([A-Za-z_]\w*)\s*\{([^}]*)\}", src):
-        _structs.append((_m.group(1), _m.group(2)))
-    for _m in re.finditer(r"\btypedef\s+struct\s*(?:[A-Za-z_]\w*)?\s*\{([^}]*)\}\s*([A-Za-z_]\w*)\s*;", src):
-        _structs.append((_m.group(2), _m.group(1)))
+    # struct definitions (balanced braces, supports nesting) for both
+    # `struct Foo { ... };` and `typedef struct { ... } Foo;`.
+    def _find_structs(text):
+        out = []
+        i = 0
+        n = len(text)
+        while True:
+            # find next "struct" keyword
+            idx = text.find("struct", i)
+            if idx == -1:
+                break
+            # typedef struct?
+            typedef = False
+            # check preceding typedef
+            pre = text[:idx].rstrip()
+            if pre.endswith("typedef"):
+                typedef = True
+            # find opening brace
+            j = text.find("{", idx)
+            if j == -1:
+                break
+            # name before brace (for `struct Foo {`)
+            seg = text[idx:j].split()
+            name_before = seg[1] if (len(seg) >= 2 and seg[0] == "struct") else None
+            # balanced
+            depth = 0
+            k = j
+            while k < n:
+                if text[k] == "{":
+                    depth += 1
+                elif text[k] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        break
+                k += 1
+            if k >= n:
+                break
+            body = text[j+1:k]
+            # name after brace (typedef)
+            tail = text[k+1:].lstrip()
+            m = re.match(r"([A-Za-z_]\w*)", tail)
+            name_after = m.group(1) if m else None
+            if typedef:
+                sname = name_after
+            else:
+                sname = name_before
+            if sname:
+                out.append((sname, body))
+            i = k + 1
+        return out
+    _structs = _find_structs(src)
+    _enum_names = set()
+    for _m in re.finditer(r"\benum\s+([A-Za-z_]\w*)\s*\{", src):
+        _enum_names.add(_m.group(1))
+    for _m in re.finditer(r"\btypedef\s+enum\s*(?:[A-Za-z_]\w*)?\s*\{[^}]*\}\s*([A-Za-z_]\w*)\s*;", src):
+        _enum_names.add(_m.group(1))
+    _struct_names = set(s[0] for s in _structs)
     _struct_lines = []
     for _sname, _sbody in _structs:
         _fields = []
@@ -1060,8 +1111,13 @@ def do_bindgen(args):
                 continue
             # drop array brackets from the name
             _fname = _toks[-1].split("[")[0]
-            _fty = " ".join(_toks[:-1])
-            _bratty = _map_c_type(_fty)
+            _fty = " ".join(_toks[:-1]).replace("struct ", "").replace("enum ", "").strip()
+            if _fty in _struct_names:
+                _bratty = _fty
+            elif _fty in _enum_names:
+                _bratty = "i32"
+            else:
+                _bratty = _map_c_type(_fty)
             _fields.append("%s: %s" % (_fname, _bratty))
         if _fields:
             _struct_lines.append("extern struct %s { %s }" % (_sname, ", ".join(_fields)))
@@ -1078,7 +1134,13 @@ def do_bindgen(args):
             continue
         if star == "*":
             ret = ret + " *"
-        rty = _map_c_type(ret)
+        _rty_name = ret.replace("struct ", "").replace("enum ", "").strip()
+        if _rty_name in _struct_names:
+            rty = _rty_name
+        elif _rty_name in _enum_names:
+            rty = "i32"
+        else:
+            rty = _map_c_type(ret)
         pstr = params.strip()
         if pstr == "" or pstr == "void":
             plist = []
@@ -1111,7 +1173,14 @@ def do_bindgen(args):
                     _pname = "_%d" % len(plist)
                 if not _pname.isidentifier():
                     _pname = "_%d" % len(plist)
-                plist.append((_map_c_type(ty), _pname))
+                _tyn = ty.replace("struct ", "").replace("enum ", "").strip()
+                if _tyn in _struct_names:
+                    _brat_ty = _tyn
+                elif _tyn in _enum_names:
+                    _brat_ty = "i32"
+                else:
+                    _brat_ty = _map_c_type(_tyn)
+                plist.append((_brat_ty, _pname))
             vtail = " ..ptr" if varargs else ""
         named = []
         for idx, item in enumerate(plist):
